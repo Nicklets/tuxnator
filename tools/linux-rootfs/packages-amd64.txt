@@ -1,0 +1,6 @@
+# x86_64 base libraries for the libraries Box64 has to emulate (e.g. a game's bundled libcurl needs
+# libresolv.so.2 from libc6:amd64). Keep this list small: everything Box64 can wrap should be arm64.
+libc6:amd64
+libgcc-s1:amd64
+libstdc++6:amd64
+zlib1g:amd64

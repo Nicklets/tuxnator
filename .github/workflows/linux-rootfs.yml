@@ -1,0 +1,103 @@
+name: Linux runtime rootfs
+
+# Builds the Debian arm64 rootfs used by the app's Linux mode (PRoot + Box64 glibc + Mesa Turnip KGSL/Zink).
+# See PHASE2_PLAN.md. Versions are pinned in tools/linux-rootfs/config.env.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish a GitHub release with this tag (e.g. linux-rootfs-1). Empty = artifact only."
+        required: false
+        default: ""
+      include_sources:
+        description: "Also download the Debian source packages (needed when distributing the rootfs)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    # Build inside Debian itself so components link against the same glibc as the rootfs,
+    # and so mmdebstrap has an up-to-date Debian keyring. Privileged for chroot/mounts.
+    container:
+      image: debian:trixie
+      options: --privileged
+    env:
+      WORK: /work
+    steps:
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build Box64, Mesa and shims
+        run: bash tools/linux-rootfs/build-components.sh
+
+      - name: Assemble rootfs
+        run: bash tools/linux-rootfs/make-rootfs.sh
+
+      - name: Download Debian sources
+        if: ${{ inputs.include_sources }}
+        run: |
+          . tools/linux-rootfs/config.env
+          bash tools/linux-rootfs/fetch-sources.sh "$WORK/out/linux-rootfs-$ROOTFS_VERSION.packages.tsv" "$WORK/out/sources"
+          tar -C "$WORK/out" -cf "$WORK/out/linux-rootfs-$ROOTFS_VERSION-sources.tar" sources
+          rm -rf "$WORK/out/sources"
+
+      - name: Upload rootfs
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-rootfs
+          path: /work/out/
+          # Already zstd-compressed
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            /work/src/mesa/build/meson-logs/
+            /work/src/box64/build/CMakeFiles/CMakeOutput.log
+            /work/src/box64/build/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+
+  publish:
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-rootfs
+          path: out
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          manifest="$(ls out/*.manifest.json)"
+          {
+            echo "Linux runtime rootfs for the app's Linux mode."
+            echo
+            echo '```json'
+            cat "$manifest"
+            echo '```'
+          } > notes.md
+          gh release create "$TAG" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "$TAG" --notes-file notes.md
