@@ -109,7 +109,9 @@ import com.winlator.cmod.xconnector.UnixSocketConfig;
 import com.winlator.cmod.xenvironment.ImageFs;
 import com.winlator.cmod.xenvironment.XEnvironment;
 import com.winlator.cmod.xenvironment.components.ALSAServerComponent;
+import com.winlator.cmod.xenvironment.LinuxRootfs;
 import com.winlator.cmod.xenvironment.components.GuestProgramLauncherComponent;
+import com.winlator.cmod.xenvironment.components.LinuxProgramLauncherComponent;
 import com.winlator.cmod.xenvironment.components.PulseAudioComponent;
 import com.winlator.cmod.xenvironment.components.SysVSharedMemoryComponent;
 import com.winlator.cmod.xenvironment.components.XServerComponent;
@@ -180,6 +182,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private WineRequestHandler wineRequestHandler;
     private File linuxExecutable;
     private String linuxExecArgs = "";
+    private String linuxRootfsCommand;
     private float globalCursorSpeed = 1.0f;
     private MagnifierView magnifierView;
     private boolean softStretchEnabled = false;
@@ -637,11 +640,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
             }
             Executors.newSingleThreadExecutor().execute(() -> {
                 resolveLinuxExecutable();
-                if (linuxExecutable == null) {
+                if (!isLinuxMode()) {
                     setupWineSystemFiles();
                 }
                 extractGraphicsDriverFiles();
-                if (linuxExecutable == null) {
+                if (!isLinuxMode()) {
                     changeWineAudioDriver();
                     applyGameRefreshRateUnlock();
                 }
@@ -1036,12 +1039,24 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private void resolveLinuxExecutable() {
         linuxExecutable = null;
         linuxExecArgs = "";
+        linuxRootfsCommand = null;
         if (shortcut == null || shortcut.path == null || shortcut.path.trim().isEmpty()) return;
 
         String[] parts = ProcessHelper.splitCommand(shortcut.path.trim());
         if (parts.length == 0) return;
 
         String path = parts[0].replace("\"", "");
+
+        // Phase 2: with the Debian rootfs installed, a shortcut marked linuxRuntime=rootfs, or whose
+        // Exec= is a path inside the rootfs or the guest home, runs the whole Exec line through PRoot
+        LinuxRootfs rootfs = LinuxRootfs.find(this);
+        if (rootfs.isInstalled() && (shortcut.getExtra("linuxRuntime").equals("rootfs") || isGuestFile(rootfs, path))) {
+            String extraArgs = shortcut.getExtra("execArgs");
+            linuxRootfsCommand = shortcut.path.trim() + (extraArgs.isEmpty() ? "" : " " + extraArgs);
+            Log.d("XServerDisplayActivity", "Linux rootfs mode for " + linuxRootfsCommand);
+            return;
+        }
+
         File file = new File(path);
         if (!file.isFile()) file = new File(imageFs.getRootDir(), path);
         if (!ElfHelper.isElf(file)) return;
@@ -1063,6 +1078,19 @@ public class XServerDisplayActivity extends AppCompatActivity {
         linuxExecutable = file;
         linuxExecArgs = args.toString();
         Log.d("XServerDisplayActivity", "Linux mode for " + file + " " + linuxExecArgs);
+    }
+
+    private boolean isGuestFile(LinuxRootfs rootfs, String guestPath) {
+        if (!guestPath.startsWith("/")) return false;
+        String home = LinuxProgramLauncherComponent.GUEST_HOME;
+        if (container != null && (guestPath.equals(home) || guestPath.startsWith(home + "/"))) {
+            return new File(container.getRootDir(), guestPath.substring(home.length())).isFile();
+        }
+        return new File(rootfs.getRootDir(), guestPath).isFile();
+    }
+
+    private boolean isLinuxMode() {
+        return linuxExecutable != null || linuxRootfsCommand != null;
     }
 
     private void setupXEnvironment() throws PackageManager.NameNotFoundException {
@@ -1165,7 +1193,16 @@ public class XServerDisplayActivity extends AppCompatActivity {
         guestProgramLauncherComponent.setEnvVars(envVars);
         guestProgramLauncherComponent.setTerminationCallback((status) -> runOnUiThread(this::exit));
 
-        environment.addComponent(guestProgramLauncherComponent);
+        if (linuxRootfsCommand != null) {
+            // The container/Wine variables (Bionic wrapper ICD, DXVK...) don't apply to the glibc
+            // guest, so only the shortcut's own variables are passed along
+            LinuxProgramLauncherComponent linuxLauncher = new LinuxProgramLauncherComponent(LinuxRootfs.find(this), linuxRootfsCommand);
+            linuxLauncher.setHomeDir(container.getRootDir());
+            if (shortcut != null) linuxLauncher.putEnvVars(new EnvVars(shortcut.getExtra("envVars")));
+            linuxLauncher.setTerminationCallback((status) -> runOnUiThread(this::exit));
+            environment.addComponent(linuxLauncher);
+        }
+        else environment.addComponent(guestProgramLauncherComponent);
 
         File devInputDir = new File(imageFs.getRootDir(), "dev/input");
         if (devInputDir.exists() || devInputDir.mkdirs()) {
