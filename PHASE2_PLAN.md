@@ -132,11 +132,13 @@ conteúdos que já existe (`ContentsManager`, `profile.json`, catálogo remoto).
    Dois consertos no PRoot 5.1 do repo: o loader precisa ser freestanding (sem `memset@plt`) e a
    syscall `statx` (usada pelo coreutils do Debian 13) não tinha tradução de caminho.
    Plano original do M2: Compilar `cpp/proot`; botão de debug que roda `/bin/true`, `uname` e `vulkaninfo` dentro da rootfs, instalada a partir de um arquivo local (adb push). Valida R1 e R2.
-3. **[Vulkan e OpenGL feitos]** **M3: imagem na tela.** `vkcube` renderiza e anima no X server
-   do app (WSI por software). Custo alto de CPU (~1 núcleo no cliente + ~1 no app) → R3 continua para
-   desempenho. Pendências: `MESA_VK_WSI_DEBUG=sw` com MIT-SHM dá segfault no shim SysV; GLX/Zink resolvido com `LIBGL_KOPPER_DRI2=1` (glxgears ~1500 FPS renderizados);
-   ("couldn't find RGB GLX visual or fbconfig", "DRI3 not available"); o X server só tem um visual de
-   32 bits; PRoot 5.1 não tem `-0`/`link2symlink`/`sysvipc` → avaliar o PRoot do Termux.
+3. **[Vulkan e OpenGL feitos]** **M3: imagem na tela.** `vkcube` e `glxgears` renderizam e animam no
+   X server do app (WSI por software). OpenGL: sem DRI3 utilizável o GLX não achava fbconfigs
+   ("couldn't find RGB GLX visual or fbconfig"); `LIBGL_KOPPER_DRI2=1` faz o Zink usar o caminho DRI2 e
+   apresentar pelo WSI Vulkan (glxgears ~1500 FPS renderizados). Custo alto de CPU (~1 núcleo no cliente
+   + ~1 no app) → R3 continua para desempenho. Pendências: `MESA_VK_WSI_DEBUG=sw` com MIT-SHM dá segfault
+   no shim SysV; o X server só tem um visual de 32 bits; PRoot 5.1 não tem `-0`/`link2symlink`/`sysvipc`
+   → avaliar o PRoot do Termux.
    Plano original do M3: `vkcube` e `glxgears` (Zink) aparecendo no X server do app. Valida R3 e R4.
 4. **M4: SuperTuxKart jogável.** Áudio pelo PulseAudio, controle pelo fakeinput. Valida R5.
 5. **M5: produto.** Download da rootfs pelo catálogo com SHA-256, UI de "Importar jogo", container `runtime=linux`.
