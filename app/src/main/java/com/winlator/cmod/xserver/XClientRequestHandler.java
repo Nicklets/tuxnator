@@ -304,7 +304,10 @@ public class XClientRequestHandler implements RequestHandler {
                     }
                     break;
                 case ClientOpcodes.QUERY_KEYMAP:
-                    try (XLock lock = client.xServer.lock(XServer.Lockable.WINDOW_MANAGER)) {
+                    // The stream lock is what flushes the reply; without it the reply sat in the
+                    // buffer and clients such as SDL2 waited forever
+                    try (XLock lock = client.xServer.lock(XServer.Lockable.WINDOW_MANAGER);
+                         XStreamLock streamLock = outputStream.lock()) {
                         outputStream.writeByte(RESPONSE_CODE_SUCCESS);
                         outputStream.writeByte((byte) 0);
                         outputStream.writeShort(client.getSequenceNumber());
@@ -436,11 +439,10 @@ public class XClientRequestHandler implements RequestHandler {
                 case ClientOpcodes.GET_POINTER_MAPPING:
                     CursorRequests.getPointerMaping(client, inputStream, outputStream);
                     break;
+                // GrabServer/UngrabServer have no reply in the protocol; sending one desynced clients
                 case 36:
                     try (XLock lock = client.xServer.lockAll()) {
                         client.xServer.setGrabbed(true, client);
-                        outputStream.writeSuccessReply(client.getSequenceNumber(), 0);
-                        Log.d("XClientRequestHandler", "X_GrabServer request handled successfully:" + outputStream.buffer.position());
                     }
                     break;
 
@@ -449,8 +451,6 @@ public class XClientRequestHandler implements RequestHandler {
                         if (client.xServer.isGrabbedBy(client)) {
                             client.xServer.setGrabbed(false, null);
                         }
-                        outputStream.writeSuccessReply(client.getSequenceNumber(), 0);
-                        Log.d("XClientRequestHandler", "X_UngrabServer request handled successfully:" + outputStream.buffer.position());
                     }
                     break;
                 default:
