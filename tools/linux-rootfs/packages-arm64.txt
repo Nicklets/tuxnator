@@ -46,3 +46,6 @@ zlib1g
 mesa-utils
 vulkan-tools
 x11-utils
+# Debugging tools for bringing up new programs (PRoot emulates ptrace for gdb/strace)
+gdb
+strace
