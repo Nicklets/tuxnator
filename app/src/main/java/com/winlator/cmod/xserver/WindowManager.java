@@ -60,6 +60,11 @@ public class WindowManager extends XResourceManager {
         rootWindow = new Window(id, drawable, 0, 0, screenInfo.width, screenInfo.height, null);
         rootWindow.attributes.setMapped(true);
         windows.put(id, rootWindow);
+        // An X server starts with the focus on PointerRoot: keys go to the window under the
+        // pointer until a client or window manager sets the focus. Starting at None dropped every
+        // key for clients that never call SetInputFocus (Wine always does)
+        focusedWindow = rootWindow;
+        focusRevertTo = FocusRevertTo.POINTER_ROOT;
     }
 
     public Window getWindow(int id) {

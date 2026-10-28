@@ -1120,7 +1120,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (linuxExecutable != null) {
                 guestProgramLauncherComponent.setLinuxExecutable(linuxExecutable, linuxExecArgs);
             }
-            else {
+            else if (linuxRootfsCommand == null) {
                 String guestExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " + getWineStartCommand();
                 guestProgramLauncherComponent.setGuestExecutable(guestExecutable);
             }
@@ -1201,6 +1201,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (shortcut != null) linuxLauncher.putEnvVars(new EnvVars(shortcut.getExtra("envVars")));
             linuxLauncher.setTerminationCallback((status) -> runOnUiThread(this::exit));
             environment.addComponent(linuxLauncher);
+            // The startup overlay waits for a window to draw, but some native clients never draw
+            // into their own window (e.g. xev) and the overlay would keep eating all touches
+            preloaderDialog.closeOnUiThread();
         }
         else environment.addComponent(guestProgramLauncherComponent);
 

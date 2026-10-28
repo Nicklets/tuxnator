@@ -20,8 +20,7 @@ public abstract class ExtensionRequests {
         short length = inputStream.readShort();
         inputStream.skip(2);
         String name = inputStream.readString8(length);
-        Extension extension = client.xServer.getExtensionByName(name);
-        try (XStreamLock lock = outputStream.lock()) {
+        Extension extension = client.xServer.getExtensionByName(name);        try (XStreamLock lock = outputStream.lock()) {
             outputStream.writeByte(RESPONSE_CODE_SUCCESS);
             outputStream.writeByte((byte)0);
             outputStream.writeShort(client.getSequenceNumber());

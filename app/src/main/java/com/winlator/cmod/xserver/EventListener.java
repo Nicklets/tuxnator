@@ -22,6 +22,7 @@ public class EventListener {
     }
 
     public void sendEvent(Event event) {
+        if (XClient.TRACE) android.util.Log.d("X11Trace", "evt c=0x" + Integer.toHexString(client.resourceIDBase) + " seq=" + client.getSequenceNumber() + " " + event.getClass().getSimpleName() + " (listener)");
         try {
             event.send(client.getSequenceNumber(), client.getOutputStream());
         }

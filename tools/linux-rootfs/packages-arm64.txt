@@ -49,3 +49,6 @@ x11-utils
 # Debugging tools for bringing up new programs (PRoot emulates ptrace for gdb/strace)
 gdb
 strace
+# SDL2 manual tests (checkkeys, testwm2...) and an X11 protocol tracer, for input/X server bring-up
+libsdl2-tests
+xtrace

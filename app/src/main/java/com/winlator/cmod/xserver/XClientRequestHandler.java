@@ -166,6 +166,7 @@ public class XClientRequestHandler implements RequestHandler {
         if (inputStream.available() < requestLength) return false;
 
         client.generateSequenceNumber();
+        if (XClient.TRACE) Log.d("X11Trace", "req c=0x" + Integer.toHexString(client.resourceIDBase) + " seq=" + client.getSequenceNumber() + " op=" + (opcode & 0xff) + "/" + requestData + " len=" + requestLength);
         client.setRequestData(requestData);
         client.setRequestLength(requestLength);
 
@@ -438,6 +439,33 @@ public class XClientRequestHandler implements RequestHandler {
                     break;
                 case ClientOpcodes.GET_POINTER_MAPPING:
                     CursorRequests.getPointerMaping(client, inputStream, outputStream);
+                    break;
+                // Requests without a reply that native X11 clients send routinely (SDL2, Xlib apps).
+                // There is no window manager or passive grab support behind them, so accepting them
+                // as no-ops is closer to a real server than answering BadRequest
+                case 6:   // ChangeSaveSet
+                case 28:  // GrabButton
+                case 29:  // UngrabButton
+                case 30:  // ChangeActivePointerGrab
+                case 32:  // UngrabKeyboard
+                case 33:  // GrabKey
+                case 34:  // UngrabKey
+                case 35:  // AllowEvents
+                case 102: // ChangeKeyboardControl
+                case 105: // ChangePointerControl
+                case 112: // SetCloseDownMode
+                case 114: // RotateProperties
+                    client.skipRequest();
+                    break;
+                case 31:  // GrabKeyboard: report success, keyboard events already follow the focus
+                    client.skipRequest();
+                    try (XStreamLock streamLock = outputStream.lock()) {
+                        outputStream.writeByte(RESPONSE_CODE_SUCCESS);
+                        outputStream.writeByte((byte)0);
+                        outputStream.writeShort(client.getSequenceNumber());
+                        outputStream.writeInt(0);
+                        outputStream.writePad(24);
+                    }
                     break;
                 // GrabServer/UngrabServer have no reply in the protocol; sending one desynced clients
                 case 36:

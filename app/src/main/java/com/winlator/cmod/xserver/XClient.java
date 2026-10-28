@@ -52,7 +52,11 @@ public class XClient implements XResourceManager.OnResourceLifecycleListener {
         window.addEventListener(eventListener);
     }
 
+    // TEMP debug: X11 request/event trace, enabled by creating files/x11trace
+    public static boolean TRACE = new java.io.File("/data/user/0/com.winlator.cmod/files/x11trace").exists();
+
     public void sendEvent(Event event) {
+        if (TRACE) android.util.Log.d("X11Trace", "evt c=0x" + Integer.toHexString(resourceIDBase) + " seq=" + sequenceNumber + " " + event.getClass().getSimpleName());
         try {
             event.send(sequenceNumber, outputStream);
         }
