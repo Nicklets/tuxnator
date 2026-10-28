@@ -108,6 +108,10 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         launcher.bind(tmpDir + "/.X11-unix", "/tmp/.X11-unix");
         launcher.bind(tmpDir + "/.sound", "/tmp/.sound");
         launcher.bind(tmpDir + "/.sysvshm", "/tmp/.sysvshm");
+        // Evdev devices written by the app for the virtual/physical gamepads (FakeInputWriter)
+        File fakeInputDir = new File(imageFs.getRootDir(), "dev/input");
+        fakeInputDir.mkdirs();
+        launcher.bind(fakeInputDir.getAbsolutePath(), "/tmp/fake-input");
         if (homeDir != null) {
             homeDir.mkdirs();
             launcher.bind(homeDir.getAbsolutePath(), GUEST_HOME);
@@ -121,7 +125,9 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         launcher.putEnv("PULSE_SERVER", "unix:/tmp/.sound/PS0");
         // Android has no SysV IPC; the shim forwards shmget & co. to the app (needed by MIT-SHM)
         launcher.putEnv("ANDROID_SYSVSHM_SERVER", "/tmp/.sysvshm/SM0");
-        launcher.putEnv("LD_PRELOAD", "/usr/lib/winlator/libandroid-sysvshm.so");
+        // libfakeinput makes those devices show up as /dev/input/event* (SDL, evdev, joydev users)
+        launcher.putEnv("LD_PRELOAD", "/usr/lib/winlator/libandroid-sysvshm.so:/usr/lib/winlator/libfakeinput.so");
+        launcher.putEnv("FAKE_EVDEV_DIR", "/tmp/fake-input");
         // The Java X server's DRI3 only takes AHardwareBuffers, so present through software
         // copies for now (risk R3 in PHASE2_PLAN.md)
         launcher.putEnv("MESA_VK_WSI_DEBUG", "sw");

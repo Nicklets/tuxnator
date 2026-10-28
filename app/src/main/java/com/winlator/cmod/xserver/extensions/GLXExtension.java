@@ -785,8 +785,14 @@ public class GLXExtension implements Extension {
         return GLXError.BASE_ERROR_CODE;
     }
 
+    /**
+     * GLX defines 17 event codes. Mesa's libGL installs a wire-to-event converter for each of
+     * first_event+0..16 and drops whatever it doesn't recognise, so a base of 0 swallowed every core
+     * event from KeyPress (2) to CreateNotify (16) — input and Expose never reached SDL2 games.
+     * Event bases must not overlap: MIT-SHM 64, RANDR 65-66, XInput 67-83, SYNC 84-85, GLX 86-102.
+     */
     @Override
     public byte getFirstEventId() {
-        return 0;
+        return 86;
     }
 }

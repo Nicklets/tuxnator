@@ -145,7 +145,11 @@ public class WindowManager extends XResourceManager {
     public void revertFocus() {
         switch (focusRevertTo) {
             case NONE:
-                focusedWindow = null;
+                // Strictly the focus becomes None here, but with no window manager to set it again
+                // every key would be dropped from then on (SDL2 focuses a probe window and destroys
+                // it), so fall back to PointerRoot like a window manager would
+                focusedWindow = rootWindow;
+                focusRevertTo = FocusRevertTo.POINTER_ROOT;
                 break;
             case POINTER_ROOT:
                 focusedWindow = rootWindow;

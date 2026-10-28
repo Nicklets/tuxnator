@@ -24,7 +24,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 public class XInput2Extension implements Extension {
     public static final byte MAJOR_OPCODE = -107;
-    private static final byte FIRST_EVENT_ID = 66;
+    // XI 1.x reserves 17 event codes; 66 collided with RANDR's RRNotify (65+1)
+    private static final byte FIRST_EVENT_ID = 67;
     private static final byte FIRST_ERROR_ID = (byte)144;
 
     private static final int XI_MAJOR = 2;

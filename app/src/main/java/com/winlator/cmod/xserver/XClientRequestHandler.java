@@ -166,7 +166,6 @@ public class XClientRequestHandler implements RequestHandler {
         if (inputStream.available() < requestLength) return false;
 
         client.generateSequenceNumber();
-        if (XClient.TRACE) Log.d("X11Trace", "req c=0x" + Integer.toHexString(client.resourceIDBase) + " seq=" + client.getSequenceNumber() + " op=" + (opcode & 0xff) + "/" + requestData + " len=" + requestLength);
         client.setRequestData(requestData);
         client.setRequestLength(requestLength);
 

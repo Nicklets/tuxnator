@@ -50,7 +50,8 @@ public class SyncExtension implements Extension, XResourceManager.OnResourceLife
     @Override public String getName()       { return "SYNC"; }
     @Override public byte getMajorOpcode()  { return MAJOR_OPCODE; }
     @Override public byte getFirstErrorId() { return Byte.MIN_VALUE; }
-    @Override public byte getFirstEventId() { return 0; }
+    // CounterNotify/AlarmNotify; must not overlap other extensions (see GLXExtension.getFirstEventId)
+    @Override public byte getFirstEventId() { return 84; }
 
     public void setTriggered(int id) {
         synchronized (fenceLock) {
