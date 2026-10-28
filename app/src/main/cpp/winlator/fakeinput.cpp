@@ -297,7 +297,14 @@ EXPORT int inotify_add_watch(int fd, const char *pathname, uint32_t mask) {
     return my_inotify_add_watch(fd, pathname, mask);
 }
 
-EXPORT int ioctl(int fd, int op, ...) {
+// The request argument is an int on Bionic but an unsigned long on glibc (this file is built for both)
+#ifdef __BIONIC__
+typedef int ioctl_request_t;
+#else
+typedef unsigned long ioctl_request_t;
+#endif
+
+EXPORT int ioctl(int fd, ioctl_request_t op, ...) {
 	va_list va;
 	void *argp;
 	
