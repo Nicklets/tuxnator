@@ -126,6 +126,9 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         // copies for now (risk R3 in PHASE2_PLAN.md)
         launcher.putEnv("MESA_VK_WSI_DEBUG", "sw");
         launcher.putEnv("MESA_LOADER_DRIVER_OVERRIDE", "zink");
+        // Without usable DRI3 the GLX loader finds no fbconfigs; this makes Zink go through the
+        // DRI2 path and present with the (working) Vulkan WSI instead
+        launcher.putEnv("LIBGL_KOPPER_DRI2", "1");
         launcher.putEnv("TU_DEBUG", "noconform");
 
         for (String name : envVars) launcher.putEnv(name, envVars.get(name));
