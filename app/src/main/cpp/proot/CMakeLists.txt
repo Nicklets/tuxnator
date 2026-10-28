@@ -46,3 +46,9 @@ target_link_libraries(libproot.so
 
 add_library(proot-loader SHARED
             src/loader/loader.c)
+
+# The loader is executed directly by the kernel inside the tracee, without any dynamic linker,
+# so it must not reference libc: no builtins (the compiler would turn its zeroing loops into
+# memset@plt calls that are never resolved), no stack protector and no libc/crt at link time.
+target_compile_options(proot-loader PRIVATE -ffreestanding -fno-builtin -fno-stack-protector)
+target_link_options(proot-loader PRIVATE -nostdlib -Wl,-e,_start)

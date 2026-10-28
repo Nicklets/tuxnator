@@ -7,6 +7,8 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -Wno-unused-function -Wimplicit-function
 add_subdirectory(OpenXR-SDK)
 add_subdirectory(patchelf)
 add_subdirectory(adrenotools)
+# PRoot (libproot.so + libproot-loader.so) runs the Linux mode's Debian rootfs
+add_subdirectory(proot)
 
 add_library(winlator SHARED
         xr/engine.c

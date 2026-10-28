@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only components, merged into the main manifest for debug builds -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Exported so it can be driven from adb; see LinuxRuntimeTestActivity -->
+        <activity
+            android:name="com.winlator.cmod.LinuxRuntimeTestActivity"
+            android:exported="true"
+            android:launchMode="singleTop" />
+    </application>
+</manifest>
