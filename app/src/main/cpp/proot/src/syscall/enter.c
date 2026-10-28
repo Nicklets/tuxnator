@@ -320,6 +320,22 @@ int translate_syscall_enter(Tracee *tracee)
 			status = translate_path2(tracee, dirfd, path, SYSARG_2, REGULAR);
 		break;
 
+	/* statx(dirfd, path, flags, mask, buf): used by coreutils & co. on recent distros */
+	case PR_statx:
+		dirfd = peek_reg(tracee, CURRENT, SYSARG_1);
+
+		status = get_sysarg_path(tracee, path, SYSARG_2);
+		if (status < 0)
+			break;
+
+		flags = peek_reg(tracee, CURRENT, SYSARG_3);
+
+		if ((flags & AT_SYMLINK_NOFOLLOW) != 0)
+			status = translate_path2(tracee, dirfd, path, SYSARG_2, SYMLINK);
+		else
+			status = translate_path2(tracee, dirfd, path, SYSARG_2, REGULAR);
+		break;
+
 	case PR_fchmodat:
 	case PR_faccessat:
 	case PR_faccessat2:

@@ -383,6 +383,7 @@ static FilteredSysnum proot_sysnums[] = {
 	{ PR_stat64,		0 },
 	{ PR_statfs,		FILTER_SYSEXIT },
 	{ PR_statfs64,		FILTER_SYSEXIT },
+	{ PR_statx,		0 },
 	{ PR_symlink,		0 },
 	{ PR_symlinkat,		0 },
 	{ PR_truncate,		0 },

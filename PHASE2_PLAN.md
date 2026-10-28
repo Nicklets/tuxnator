@@ -127,7 +127,11 @@ conteúdos que já existe (`ContentsManager`, `profile.json`, catálogo remoto).
 ## 6. Marcos
 
 1. **M1: rootfs.** Workflow do Actions gera `linux-rootfs-<ver>.tar.zst` + SHA-256 (Debian + Box64 + Mesa + shims).
-2. **M2: PRoot no app.** Compilar `cpp/proot`; botão de debug que roda `/bin/true`, `uname` e `vulkaninfo` dentro da rootfs, instalada a partir de um arquivo local (adb push). Valida R1 e R2.
+2. **[Feito, validado no Moto Edge 30 Pro]** **M2: PRoot no app.** R1 e R2 OK: Debian 13 roda no PRoot,
+   Box64 v0.4.4 glibc executa, `vulkaninfo` vê "Turnip Adreno (TM) 730" (Mesa 26.2.5, Vulkan 1.4).
+   Dois consertos no PRoot 5.1 do repo: o loader precisa ser freestanding (sem `memset@plt`) e a
+   syscall `statx` (usada pelo coreutils do Debian 13) não tinha tradução de caminho.
+   Plano original do M2: Compilar `cpp/proot`; botão de debug que roda `/bin/true`, `uname` e `vulkaninfo` dentro da rootfs, instalada a partir de um arquivo local (adb push). Valida R1 e R2.
 3. **M3: imagem na tela.** `vkcube` e `glxgears` (Zink) aparecendo no X server do app. Valida R3 e R4.
 4. **M4: SuperTuxKart jogável.** Áudio pelo PulseAudio, controle pelo fakeinput. Valida R5.
 5. **M5: produto.** Download da rootfs pelo catálogo com SHA-256, UI de "Importar jogo", container `runtime=linux`.
