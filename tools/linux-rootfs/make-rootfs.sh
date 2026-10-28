@@ -39,7 +39,7 @@ cp -a "$STAGING/." "$ROOTFS/"
 mv "$ROOTFS/.components.json" "$WORK/components.json"
 # Keep apt from replacing our Mesa with Debian's (which lacks the KGSL backend)
 chroot "$ROOTFS" sh -c 'for p in libgbm1 libglx-mesa0 libegl-mesa0 libgl1-mesa-dri mesa-vulkan-drivers; do
-    dpkg-query -W "$p" >/dev/null 2>&1 && apt-mark hold "$p"; done; true'
+    dpkg-query -W -f="\${Status}" "$p" 2>/dev/null | grep -q "install ok installed" && apt-mark hold "$p"; done; true'
 chroot "$ROOTFS" ldconfig
 echo "::endgroup::"
 
