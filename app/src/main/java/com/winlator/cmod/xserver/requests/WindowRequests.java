@@ -5,9 +5,11 @@ import static com.winlator.cmod.xserver.XClientRequestHandler.RESPONSE_CODE_SUCC
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
+import com.winlator.cmod.xserver.Atom;
 import com.winlator.cmod.xserver.Drawable;
 import com.winlator.cmod.xserver.Bitmask;
 import com.winlator.cmod.xserver.WindowAttributes;
+import com.winlator.cmod.xserver.errors.BadAtom;
 import com.winlator.cmod.xserver.errors.BadDrawable;
 import com.winlator.cmod.xserver.errors.BadIdChoice;
 import com.winlator.cmod.xserver.errors.BadValue;
@@ -166,6 +168,7 @@ public abstract class WindowRequests {
         if (window == null) throw new BadWindow(windowId);
 
         int atom = inputStream.readInt();
+        if (!Atom.isValid(atom)) throw new BadAtom(atom);
         int type = inputStream.readInt();
         byte format = inputStream.readByte();
         inputStream.skip(3);

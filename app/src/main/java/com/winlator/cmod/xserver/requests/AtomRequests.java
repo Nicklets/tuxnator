@@ -19,7 +19,12 @@ public abstract class AtomRequests {
         inputStream.skip(2);
         String name = inputStream.readString8(length);
         int id = onlyIfExists ? Atom.getId(name) : Atom.internAtom(name);
-        if (id < 0) throw new BadAtom(id);
+        // only-if-exists on an unknown name is not an error: the reply carries None (0).
+        // Clients like vkcube dereference the reply without checking it.
+        if (id < 0) {
+            if (!onlyIfExists) throw new BadAtom(id);
+            id = 0;
+        }
 
         try (XStreamLock lock = outputStream.lock()) {
             outputStream.writeByte(RESPONSE_CODE_SUCCESS);

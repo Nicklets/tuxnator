@@ -539,7 +539,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         xServer.windowManager.addOnWindowModificationListener(new WindowManager.OnWindowModificationListener() {
             @Override
             public void onUpdateWindowContent(Window window) {
-                if (!winStarted[0] && window.isApplicationWindow()) {
+                if (!winStarted[0] && (window.isApplicationWindow() || (isLinuxMode() && window.isMappedTopLevel()))) {
                     if (!simulateTouchScreen) {
                         xServerView.setCursorVisible(true);
                     }
@@ -3021,6 +3021,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private void changeFrameRatingVisibility(Window window, Property property) {
 
         String propName = (property != null) ? property.nameAsString() : null;
+        // Properties whose atom has no name tell us nothing about the renderer
+        if (property != null && propName == null) return;
 
         if (property != null) {
             if (activeRendererWindowId == -1 && propName.contains("_MESA_DRV")) {

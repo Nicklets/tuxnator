@@ -182,6 +182,11 @@ public class Window extends XResource {
         return attributes.isMapped() && windowGroup == id && width > 1 && height > 1;
     }
 
+    /** A mapped child of the root window. Native Linux clients (unlike Wine) often set no WM_HINTS. */
+    public boolean isMappedTopLevel() {
+        return attributes.isMapped() && parent != null && parent.getParent() == null && width > 1 && height > 1;
+    }
+
     public boolean isInputOutput() {
         return content != null;
     }
