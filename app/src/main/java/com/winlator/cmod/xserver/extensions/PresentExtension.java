@@ -247,6 +247,88 @@ public class PresentExtension implements Extension,
         } catch (IOException ignored) {}
     }
 
+    // Vsync for FIFO presents. Mesa's X11 WSI sends one FIFO frame at a time, targeting the MSC
+    // after the last completed one, and waits for its CompleteNotify: completing on request let
+    // games that rely on vsync (and skip their own frame limiter) render far faster than the
+    // screen. The MSC counts the display's vsyncs while presents are waiting for one.
+    private static class PendingComplete {
+        final XClient client; final Window window; final int serial; final Mode mode; final long targetMsc;
+        PendingComplete(XClient c, Window w, int s, Mode m, long t) {
+            client = c; window = w; serial = s; mode = m; targetMsc = t;
+        }
+    }
+
+    private final java.util.ArrayList<PendingComplete> pendingCompletes = new java.util.ArrayList<>();
+    private android.os.HandlerThread vsyncThread;
+    private volatile android.view.Choreographer vsyncChoreographer;
+    private boolean vsyncPosted;
+    private long msc;
+    private long lastVsyncNs;
+    private boolean lastVsyncWasPosted;
+    private long vsyncPeriodNs = 1_000_000_000L / 60;
+
+    private android.view.Choreographer getVsyncChoreographer() {
+        synchronized (pendingCompletes) {
+            if (vsyncThread == null) {
+                vsyncThread = new android.os.HandlerThread("PresentVsync", android.os.Process.THREAD_PRIORITY_DISPLAY);
+                vsyncThread.start();
+                new android.os.Handler(vsyncThread.getLooper()).post(() ->
+                    vsyncChoreographer = android.view.Choreographer.getInstance());
+            }
+        }
+        return vsyncChoreographer;
+    }
+
+    private final android.view.Choreographer.FrameCallback onVsync = frameTimeNs -> {
+        java.util.ArrayList<PendingComplete> due = new java.util.ArrayList<>();
+        long ust = frameTimeNs / 1000;
+        long currentMsc;
+        synchronized (pendingCompletes) {
+            long delta = frameTimeNs - lastVsyncNs;
+            // Callbacks on consecutive vsyncs measure the refresh period...
+            if (lastVsyncWasPosted && delta > 0 && delta < 100_000_000L) {
+                vsyncPeriodNs = (vsyncPeriodNs * 7 + delta) / 8;
+            }
+            // ...which counts the vsyncs missed while nothing was waiting, so the MSC keeps up
+            msc += lastVsyncNs == 0 ? 1 : Math.max(1, (delta + vsyncPeriodNs / 2) / vsyncPeriodNs);
+            lastVsyncNs = frameTimeNs;
+            currentMsc = msc;
+            for (java.util.Iterator<PendingComplete> it = pendingCompletes.iterator(); it.hasNext(); ) {
+                PendingComplete p = it.next();
+                if (p.targetMsc <= msc) {
+                    due.add(p);
+                    it.remove();
+                }
+            }
+            vsyncPosted = !pendingCompletes.isEmpty();
+            lastVsyncWasPosted = vsyncPosted;
+            if (vsyncPosted) vsyncChoreographer.postFrameCallback(this.onVsync);
+        }
+        for (PendingComplete p : due) {
+            sendCompleteNotify(p.window, p.serial, Kind.PIXMAP, p.mode, ust, currentMsc);
+            flushClientOutput(p.client);
+        }
+    };
+
+    private void completePresent(XClient client, Window window, int serial, Mode mode, long targetMsc) {
+        android.view.Choreographer choreographer = getVsyncChoreographer();
+        long currentMsc;
+        synchronized (pendingCompletes) {
+            currentMsc = msc;
+            // A target far ahead of the counter can't come from FIFO pacing; don't hold it
+            if (choreographer != null && targetMsc > msc && targetMsc <= msc + 1000) {
+                pendingCompletes.add(new PendingComplete(client, window, serial, mode, targetMsc));
+                if (!vsyncPosted) {
+                    vsyncPosted = true;
+                    choreographer.postFrameCallback(onVsync);
+                }
+                return;
+            }
+        }
+        sendCompleteNotify(window, serial, Kind.PIXMAP, mode, System.nanoTime() / 1000, currentMsc);
+        flushClientOutput(client);
+    }
+
     private static void queryVersion(XClient client, XInputStream in, XOutputStream out) throws IOException {
         in.skip(8);
         try (XStreamLock lock = out.lock()) {
@@ -270,6 +352,8 @@ public class PresentExtension implements Extension,
         short yOff = in.readShort();
         in.skip(8);
         int idleFence = in.readInt();
+        in.skip(8);
+        long targetMsc = in.readLong();
         in.skip(client.getRemainingRequestLength());
 
         Window window = client.xServer.windowManager.getWindow(windowId);
@@ -296,9 +380,6 @@ public class PresentExtension implements Extension,
             targetFps = 0;
         }
 
-        long ust = System.nanoTime() / 1000;
-        long msc = ust / (targetFps > 0 ? (1_000_000L / targetFps) : (1_000_000L / 60));
-
         synchronized (content.renderLock) {
             boolean supportsDirectScanout =
                 renderer instanceof VulkanXServerView ||
@@ -311,8 +392,7 @@ public class PresentExtension implements Extension,
                     && renderer instanceof VulkanXServerView && window.attributes.isMapped()) {
                 if (((VulkanXServerView) renderer).updateWindowContentDmaBuf(window, pixmap.drawable,
                         dmaBuf.fd, dmaBuf.stride, dmaBuf.offset)) {
-                    sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.FLIP, ust, msc);
-                    flushClientOutput(client);
+                    completePresent(client, window, serial, Mode.FLIP, targetMsc);
                     scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, renderer);
                     return;
                 }
@@ -321,8 +401,7 @@ public class PresentExtension implements Extension,
             }
 
             if (supportsDirectScanout && pixmap.drawable.isDirectScanout()) {
-                sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.FLIP, ust, msc);
-                flushClientOutput(client);
+                completePresent(client, window, serial, Mode.FLIP, targetMsc);
                 if (window.attributes.isMapped())
                     renderer.onUpdateWindowContentDirect(window, pixmap.drawable, xOff, yOff);
                 scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, renderer);
@@ -331,16 +410,14 @@ public class PresentExtension implements Extension,
                 syncDmaBufPixmap(client, pixmap);
                 content.copyArea((short)0, (short)0, xOff, yOff,
                     pixmap.drawable.width, pixmap.drawable.height, pixmap.drawable);
-                sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.COPY, ust, msc);
-                flushClientOutput(client);
+                completePresent(client, window, serial, Mode.COPY, targetMsc);
                 scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, renderer);
 
             } else {
                 syncDmaBufPixmap(client, pixmap);
                 content.copyArea((short)0, (short)0, xOff, yOff,
                     pixmap.drawable.width, pixmap.drawable.height, pixmap.drawable);
-                sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.COPY, ust, msc);
-                flushClientOutput(client);
+                completePresent(client, window, serial, Mode.COPY, targetMsc);
                 scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, renderer);
             }
         }
@@ -420,6 +497,10 @@ public class PresentExtension implements Extension,
                 }
                 events.removeAt(i);
             }
+        }
+
+        synchronized (pendingCompletes) {
+            pendingCompletes.removeIf(p -> p.window == window);
         }
 
         PendingIdle pending = pendingIdles.remove(window.id);
