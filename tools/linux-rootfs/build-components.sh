@@ -41,6 +41,14 @@ echo "::endgroup::"
 
 echo "::group::Mesa $MESA_REF"
 git clone --depth 1 --branch "$MESA_REF" "$MESA_REPO" "$SRC/mesa"
+# Linking libdrm (see config.env) also turns on the KMS display WSI, but Turnip on KGSL fails
+# instance creation when VK_KHR_display is enabled, and apps like vkcube enable it whenever it's
+# listed. There is no KMS on Android, so leave the display WSI out.
+for f in src/vulkan/meson.build src/vulkan/wsi/meson.build; do
+    grep -q '^if system_has_kms_drm and not with_platform_android$' "$SRC/mesa/$f" \
+        || { echo "display WSI condition not found in $f" >&2; exit 1; }
+    sed -i 's/^if system_has_kms_drm and not with_platform_android$/if false/' "$SRC/mesa/$f"
+done
 # shellcheck disable=SC2086
 meson setup "$SRC/mesa/build" "$SRC/mesa" \
     --prefix=/usr --libdir=lib/aarch64-linux-gnu $MESA_MESON_FLAGS
