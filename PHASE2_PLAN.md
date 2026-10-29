@@ -140,6 +140,11 @@ conteúdos que já existe (`ContentsManager`, `profile.json`, catálogo remoto).
    no shim SysV; o X server só tem um visual de 32 bits; PRoot 5.1 não tem `-0`/`link2symlink`/`sysvipc`
    → avaliar o PRoot do Termux.
    Plano original do M3: `vkcube` e `glxgears` (Zink) aparecendo no X server do app. Valida R3 e R4.
-4. **M4: SuperTuxKart jogável.** Áudio pelo PulseAudio, controle pelo fakeinput. Valida R5.
+4. **[Feito]** **M4: SuperTuxKart jogável.** Áudio pelo PulseAudio, controle pelo fakeinput. Valida R5.
+   SuperTuxKart 1.5 x86_64 (Box64 glibc + Zink/Turnip) roda com toque, áudio e desempenho aceitável
+   (avaliação do usuário), e reconhece o controle virtual como "Generic HID Gamepad". Principais causas
+   encontradas: GLX anunciava base de eventos 0 (o Mesa engolia os eventos de entrada 2–16), resposta de
+   QueryKeymap sem flush, foco inicial None, libfakeinput glibc sem símbolos exportados e udev sem udevd
+   no SDL2. Contorno ainda necessário: `BOX64_EMULATED_LIBS=libz.so.1` (SIGBUS no wrapper de zlib).
 5. **M5: produto.** Download da rootfs pelo catálogo com SHA-256, UI de "Importar jogo", container `runtime=linux`.
 6. **M6: limpeza.** Remover o caminho Bionic da prova de conceito; atualizar o `LINUX_MODE_MAP.md`.
