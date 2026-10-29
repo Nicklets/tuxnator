@@ -30,7 +30,9 @@
 #include <sys/sysmacros.h>
 #include <linux/input.h>
 
-#define EXPORT __attribute__((visibility("default"))) extern "C"
+// The attribute must come after extern "C": GCC (the glibc build for the Linux rootfs) ignores it
+// in front, and with -fvisibility=hidden none of the hooks were exported at all
+#define EXPORT extern "C" __attribute__((visibility("default")))
 
 std::unordered_map<int, const char *> controller_map;
 static bool initialized = false;

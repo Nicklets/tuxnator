@@ -59,6 +59,11 @@ install -Dm755 "$SRC/sysvshm/libandroid-sysvshm.so" "$STAGING/usr/lib/winlator/l
 g++ -O2 -shared -fPIC -fvisibility=hidden -Wall -Wextra \
     -o "$STAGING/usr/lib/winlator/libfakeinput.so" \
     "$REPO_ROOT/app/src/main/cpp/winlator/fakeinput.cpp" -ldl -lpthread
+# The shim only works if its hooks interpose libc's: fail the build if they aren't exported
+for sym in open openat stat scandir ioctl inotify_add_watch; do
+    nm -D --defined-only "$STAGING/usr/lib/winlator/libfakeinput.so" | grep -q " T $sym\$" \
+        || { echo "libfakeinput.so does not export $sym" >&2; exit 1; }
+done
 echo "::endgroup::"
 
 # Record what was built, for the manifest

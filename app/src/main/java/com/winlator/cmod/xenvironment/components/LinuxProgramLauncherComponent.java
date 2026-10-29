@@ -128,6 +128,9 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         // libfakeinput makes those devices show up as /dev/input/event* (SDL, evdev, joydev users)
         launcher.putEnv("LD_PRELOAD", "/usr/lib/winlator/libandroid-sysvshm.so:/usr/lib/winlator/libfakeinput.so");
         launcher.putEnv("FAKE_EVDEV_DIR", "/tmp/fake-input");
+        // libudev is in the rootfs but there is no udevd, so SDL2's udev enumeration fails and the
+        // whole joystick subsystem with it; scanning /dev/input directly goes through libfakeinput
+        launcher.putEnv("SDL_JOYSTICK_DISABLE_UDEV", "1");
         // The Java X server's DRI3 only takes AHardwareBuffers, so present through software
         // copies for now (risk R3 in PHASE2_PLAN.md)
         launcher.putEnv("MESA_VK_WSI_DEBUG", "sw");
