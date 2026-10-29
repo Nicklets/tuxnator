@@ -19,6 +19,7 @@ libpulse0
 libsdl2-2.0-0
 libssl3t64
 libstdc++6
+libudev1
 libvorbisfile3
 libvulkan1
 libwayland-client0

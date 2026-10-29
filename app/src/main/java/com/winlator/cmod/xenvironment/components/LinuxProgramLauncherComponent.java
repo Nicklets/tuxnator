@@ -126,7 +126,13 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         // Android has no SysV IPC; the shim forwards shmget & co. to the app (needed by MIT-SHM)
         launcher.putEnv("ANDROID_SYSVSHM_SERVER", "/tmp/.sysvshm/SM0");
         // libfakeinput makes those devices show up as /dev/input/event* (SDL, evdev, joydev users)
-        launcher.putEnv("LD_PRELOAD", "/usr/lib/winlator/libandroid-sysvshm.so:/usr/lib/winlator/libfakeinput.so");
+        String preload = "/usr/lib/winlator/libandroid-sysvshm.so:/usr/lib/winlator/libfakeinput.so";
+        // Udev monitors that initialize instead of failing on Android's netlink block; without it,
+        // SDL2 retries its HIDAPI init every frame (rootfs v9+)
+        if (new File(rootfs.getRootDir(), "usr/lib/winlator/libfakeudev.so").isFile()) {
+            preload += ":/usr/lib/winlator/libfakeudev.so";
+        }
+        launcher.putEnv("LD_PRELOAD", preload);
         launcher.putEnv("FAKE_EVDEV_DIR", "/tmp/fake-input");
         // libudev is in the rootfs but there is no udevd, so SDL2's udev enumeration fails and the
         // whole joystick subsystem with it; scanning /dev/input directly goes through libfakeinput

@@ -23,7 +23,7 @@ sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sourc
 apt-get update
 apt-get install -y --no-install-recommends \
     build-essential cmake git ca-certificates python3 pkg-config file \
-    meson ninja-build glslang-tools python3-mako python3-yaml python3-packaging python3-ply
+    meson ninja-build glslang-tools python3-mako python3-yaml python3-packaging python3-ply libudev-dev
 apt-get build-dep -y mesa
 echo "::endgroup::"
 
@@ -91,6 +91,12 @@ for sym in open openat stat scandir ioctl inotify_add_watch; do
     nm -D --defined-only "$STAGING/usr/lib/winlator/libfakeinput.so" | grep -q " T $sym\$" \
         || { echo "libfakeinput.so does not export $sym" >&2; exit 1; }
 done
+# Silent udev monitors, since Android doesn't allow the netlink socket (see the source)
+gcc -O2 -shared -fPIC -fvisibility=hidden -Wall -Wextra \
+    -o "$STAGING/usr/lib/winlator/libfakeudev.so" \
+    "$HERE/shims/fakeudev.c" -ludev
+nm -D --defined-only "$STAGING/usr/lib/winlator/libfakeudev.so" | grep -q " T udev_monitor_new_from_netlink\$" \
+    || { echo "libfakeudev.so does not export udev_monitor_new_from_netlink" >&2; exit 1; }
 echo "::endgroup::"
 
 # Record what was built, for the manifest
