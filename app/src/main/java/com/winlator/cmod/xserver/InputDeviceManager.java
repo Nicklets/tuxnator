@@ -59,7 +59,15 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
 
     private void updatePointWindow() {
         Window pointWindow = xServer.windowManager.findPointWindow(xServer.pointer.getClampedX(), xServer.pointer.getClampedY());
-        this.pointWindow = pointWindow != null ? pointWindow : xServer.windowManager.rootWindow;
+        if (pointWindow == null) pointWindow = xServer.windowManager.rootWindow;
+        Window previous = this.pointWindow;
+        this.pointWindow = pointWindow;
+        // Crossing events whenever the window under the pointer changes (pointer moved, a window
+        // mapped/unmapped/moved under it): GDK only takes pointer events for the window it last
+        // saw the pointer enter, so popup menus never reacted without them
+        if (previous != null && previous != pointWindow && xServer.windowManager.getWindow(previous.id) == previous) {
+            sendEnterLeaveNotify(previous, pointWindow, PointerWindowEvent.Mode.NORMAL);
+        }
     }
 
     public Window getPointWindow() {
@@ -139,15 +147,16 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
             }
 
             if (grabWindow != null && grabWindow.attributes.isEnabled()) {
-                Bitmask eventMask = createPointerEventMask();
-                eventMask.unset(button.flag());
+                // The state is from just before the event: without the button now pressed
+                Bitmask state = getKeyButMask();
+                state.unset(button.flag());
 
                 short x = xServer.pointer.getX();
                 short y = xServer.pointer.getY();
                 short[] localPoint = grabWindow.rootPointToLocal(x, y);
 
                 Window child = grabWindow.isAncestorOf(pointWindow) ? pointWindow : null;
-                grabWindow.sendEvent(Event.BUTTON_PRESS, new ButtonPress(button.code(), xServer.windowManager.rootWindow, grabWindow, child, x, y, localPoint[0], localPoint[1], eventMask));
+                grabWindow.sendEvent(Event.BUTTON_PRESS, new ButtonPress(button.code(), xServer.windowManager.rootWindow, grabWindow, child, x, y, localPoint[0], localPoint[1], state));
             }
         }
     }
@@ -170,8 +179,13 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
                 short y = xServer.pointer.getY();
                 short[] localPoint = eventWindow.rootPointToLocal(x, y);
 
+                // ...and here with the button just released still in it (the event mask's
+                // PointerMotion bit used to land on Mod4: every click looked like Super+click)
+                Bitmask state = getKeyButMask();
+                state.set(button.flag());
+
                 Window child = eventWindow.isAncestorOf(pointWindow) ? pointWindow : null;
-                ButtonRelease buttonRelease = new ButtonRelease(button.code(), xServer.windowManager.rootWindow, eventWindow, child, x, y, localPoint[0], localPoint[1], eventMask);
+                ButtonRelease buttonRelease = new ButtonRelease(button.code(), xServer.windowManager.rootWindow, eventWindow, child, x, y, localPoint[0], localPoint[1], state);
                 sendEvent(window, eventMask, buttonRelease);
             }
 

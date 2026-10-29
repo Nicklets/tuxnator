@@ -63,6 +63,11 @@ public class GrabManager implements WindowManager.OnWindowModificationListener {
         if (this.window == null) {
             xServer.inputDeviceManager.sendEnterLeaveNotify(xServer.inputDeviceManager.getPointWindow(), window, PointerWindowEvent.Mode.GRAB);
         }
+        else if (this.window != window) {
+            // Moving an active grab (GTK menus re-grab on their popup) crosses from the old grab
+            // window to the new one, like Xorg's ChangeActiveGrab
+            xServer.inputDeviceManager.sendEnterLeaveNotify(this.window, window, PointerWindowEvent.Mode.GRAB);
+        }
         this.window = window;
         this.releaseWithButtons = releaseWithButtons;
         this.ownerEvents = ownerEvents;

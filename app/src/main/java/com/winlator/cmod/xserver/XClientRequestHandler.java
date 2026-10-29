@@ -431,6 +431,12 @@ public class XClientRequestHandler implements RequestHandler {
                         KeyboardRequests.getKeyboardMapping(client, inputStream, outputStream);
                     }
                     break;
+                case ClientOpcodes.GET_KEYBOARD_CONTROL:
+                    KeyboardRequests.getKeyboardControl(client, inputStream, outputStream);
+                    break;
+                case ClientOpcodes.GET_POINTER_CONTROL:
+                    KeyboardRequests.getPointerControl(client, inputStream, outputStream);
+                    break;
                 case ClientOpcodes.BELL:
                     client.skipRequest();
                     break;
