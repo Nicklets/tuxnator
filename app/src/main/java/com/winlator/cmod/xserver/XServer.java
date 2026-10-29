@@ -15,6 +15,7 @@ import com.winlator.cmod.xserver.extensions.PresentExtension;
 import com.winlator.cmod.xserver.extensions.RandrExtension;
 import com.winlator.cmod.xserver.extensions.SyncExtension;
 import com.winlator.cmod.xserver.extensions.XCompositeExtension;
+import com.winlator.cmod.xserver.extensions.XFixesExtension;
 import com.winlator.cmod.xserver.extensions.XInput2Extension;
 
 import java.nio.charset.Charset;
@@ -246,6 +247,7 @@ public class XServer {
         extensions.put(GLXExtension.MAJOR_OPCODE, new GLXExtension(this));
         extensions.put(XInput2Extension.MAJOR_OPCODE, new XInput2Extension());
         extensions.put(XCompositeExtension.MAJOR_OPCODE, new XCompositeExtension(this));
+        extensions.put(XFixesExtension.MAJOR_OPCODE, new XFixesExtension());
     }
 
     public <T extends Extension> T getExtension(int opcode) {
