@@ -137,9 +137,11 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         // libudev is in the rootfs but there is no udevd, so SDL2's udev enumeration fails and the
         // whole joystick subsystem with it; scanning /dev/input directly goes through libfakeinput
         launcher.putEnv("SDL_JOYSTICK_DISABLE_UDEV", "1");
-        // The Java X server's DRI3 only takes AHardwareBuffers, so present through software
-        // copies for now (risk R3 in PHASE2_PLAN.md)
-        launcher.putEnv("MESA_VK_WSI_DEBUG", "sw");
+        // Vulkan presents go through DRI3/Present: the renderer imports the dma-buf (zero-copy with
+        // a Turnip renderer driver, a CPU copy otherwise) and FIFO is paced to the display's vsync.
+        // Before rootfs v8, Mesa's WSI didn't wait for the frame's fence (KGSL has no implicit
+        // sync), so the X server could show half-rendered frames: copy through the software path.
+        if (rootfs.getVersion() < 8) launcher.putEnv("MESA_VK_WSI_DEBUG", "sw");
         launcher.putEnv("MESA_LOADER_DRIVER_OVERRIDE", "zink");
         // Without usable DRI3 the GLX loader finds no fbconfigs; this makes Zink go through the
         // DRI2 path and present with the (working) Vulkan WSI instead
