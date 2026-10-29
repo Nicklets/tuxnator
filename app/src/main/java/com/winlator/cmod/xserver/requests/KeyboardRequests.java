@@ -14,22 +14,23 @@ import java.io.IOException;
 
 public abstract class KeyboardRequests {
     public static void getKeyboardMapping(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
-        byte firstKeycode = inputStream.readByte();
+        int firstKeycode = inputStream.readUnsignedByte();
         int count = inputStream.readUnsignedByte();
         inputStream.skip(2);
 
+        // KEYSYMS_PER_KEYCODE keysyms for each of the count keycodes; the table doesn't cover
+        // the whole keycode range (window managers ask for all of it), the rest is NoSymbol
+        int[] keysyms = client.xServer.keyboard.keysyms;
         try (XStreamLock lock = outputStream.lock()) {
             outputStream.writeByte(RESPONSE_CODE_SUCCESS);
             outputStream.writeByte(KEYSYMS_PER_KEYCODE);
             outputStream.writeShort(client.getSequenceNumber());
-            outputStream.writeInt(count);
+            outputStream.writeInt(count * KEYSYMS_PER_KEYCODE);
             outputStream.writePad(24);
 
-            int i = firstKeycode - Keyboard.MIN_KEYCODE;
-            while (count != 0) {
-                outputStream.writeInt(client.xServer.keyboard.keysyms[i]);
-                count--;
-                i++;
+            int i = (firstKeycode - Keyboard.MIN_KEYCODE) * KEYSYMS_PER_KEYCODE;
+            for (int n = count * KEYSYMS_PER_KEYCODE; n > 0; n--, i++) {
+                outputStream.writeInt(i >= 0 && i < keysyms.length ? keysyms[i] : 0);
             }
         }
     }

@@ -44,12 +44,13 @@ public class Property {
         this.data = ByteBuffer.wrap(data != null ? data : new byte[0]).order(ByteOrder.LITTLE_ENDIAN);
     }
 
+    // ChangeProperty sends no data (null) for a zero-length prepend/append, e.g. Openbox on WM_CLASS
     public void prepend(byte[] values) {
-        replace(ArrayUtils.concat(values, this.data.array()));
+        if (values != null) replace(ArrayUtils.concat(values, this.data.array()));
     }
 
     public void append(byte[] values) {
-        replace(ArrayUtils.concat(this.data.array(), values));
+        if (values != null) replace(ArrayUtils.concat(this.data.array(), values));
     }
 
     @NonNull

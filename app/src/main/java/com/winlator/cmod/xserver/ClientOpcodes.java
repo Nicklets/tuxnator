@@ -47,6 +47,9 @@ public abstract class ClientOpcodes {
     public static final byte GET_IMAGE = 73;
     public static final byte CREATE_COLORMAP = 78;
     public static final byte FREE_COLORMAP = 79;
+    public static final byte ALLOC_COLOR = 84;
+    public static final byte FREE_COLORS = 88;
+    public static final byte QUERY_COLORS = 91;
     public static final byte CREATE_CURSOR = 93;
     public static final byte CREATE_GLYPH_CURSOR = 94;
     public static final byte FREE_CURSOR = 95;

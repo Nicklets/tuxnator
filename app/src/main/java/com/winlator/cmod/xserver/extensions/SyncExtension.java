@@ -1,9 +1,12 @@
 package com.winlator.cmod.xserver.extensions;
 
+import static com.winlator.cmod.xserver.XClientRequestHandler.RESPONSE_CODE_SUCCESS;
+
 import android.util.SparseArray;
 
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
+import com.winlator.cmod.xconnector.XStreamLock;
 import com.winlator.cmod.xserver.Pixmap;
 import com.winlator.cmod.xserver.Window;
 import com.winlator.cmod.xserver.XClient;
@@ -27,7 +30,26 @@ public class SyncExtension implements Extension, XResourceManager.OnResourceLife
 
     private XServer xServer;
 
+    // Counters as used by GTK and window managers for _NET_WM_SYNC_REQUEST: values are kept,
+    // but alarms never fire and Await doesn't block (nothing here waits on a counter)
+    private final Object counterLock = new Object();
+    private final java.util.HashMap<Integer, Long> counters = new java.util.HashMap<>();
+
     private static abstract class ClientOpcodes {
+        private static final byte INITIALIZE           = 0;
+        private static final byte LIST_SYSTEM_COUNTERS = 1;
+        private static final byte CREATE_COUNTER       = 2;
+        private static final byte SET_COUNTER          = 3;
+        private static final byte CHANGE_COUNTER       = 4;
+        private static final byte QUERY_COUNTER        = 5;
+        private static final byte DESTROY_COUNTER      = 6;
+        private static final byte AWAIT                = 7;
+        private static final byte CREATE_ALARM         = 8;
+        private static final byte CHANGE_ALARM         = 9;
+        private static final byte QUERY_ALARM          = 10;
+        private static final byte DESTROY_ALARM        = 11;
+        private static final byte SET_PRIORITY         = 12;
+        private static final byte GET_PRIORITY         = 13;
         private static final byte CREATE_FENCE  = 14;
         private static final byte TRIGGER_FENCE = 15;
         private static final byte RESET_FENCE   = 16;
@@ -174,6 +196,113 @@ public class SyncExtension implements Extension, XResourceManager.OnResourceLife
         }
     }
 
+    private static void initialize(XClient client, XInputStream in, XOutputStream out) throws IOException {
+        in.skip(4);
+        try (XStreamLock lock = out.lock()) {
+            out.writeByte(RESPONSE_CODE_SUCCESS);
+            out.writeByte((byte)0);
+            out.writeShort(client.getSequenceNumber());
+            out.writeInt(0);
+            out.writeByte((byte)3);
+            out.writeByte((byte)1);
+            out.writePad(22);
+        }
+    }
+
+    private static void listSystemCounters(XClient client, XOutputStream out) throws IOException {
+        try (XStreamLock lock = out.lock()) {
+            out.writeByte(RESPONSE_CODE_SUCCESS);
+            out.writeByte((byte)0);
+            out.writeShort(client.getSequenceNumber());
+            out.writeInt(0);
+            out.writeInt(0);
+            out.writePad(20);
+        }
+    }
+
+    private static long readInt64(XInputStream in) {
+        long hi = in.readInt();
+        long lo = in.readInt() & 0xffffffffL;
+        return (hi << 32) | lo;
+    }
+
+    private void createCounter(XInputStream in) throws XRequestError {
+        int id = in.readInt();
+        long value = readInt64(in);
+        synchronized (counterLock) {
+            if (counters.containsKey(id)) throw new BadIdChoice(id);
+            counters.put(id, value);
+        }
+    }
+
+    private void setCounter(XInputStream in, boolean relative) {
+        int id = in.readInt();
+        long value = readInt64(in);
+        synchronized (counterLock) {
+            Long current = counters.get(id);
+            if (current != null) counters.put(id, relative ? current + value : value);
+        }
+    }
+
+    private void queryCounter(XClient client, XInputStream in, XOutputStream out) throws IOException {
+        int id = in.readInt();
+        long value;
+        synchronized (counterLock) {
+            Long current = counters.get(id);
+            value = current != null ? current : 0;
+        }
+        try (XStreamLock lock = out.lock()) {
+            out.writeByte(RESPONSE_CODE_SUCCESS);
+            out.writeByte((byte)0);
+            out.writeShort(client.getSequenceNumber());
+            out.writeInt(0);
+            out.writeInt((int)(value >> 32));
+            out.writeInt((int)value);
+            out.writePad(16);
+        }
+    }
+
+    private void destroyCounter(XInputStream in) {
+        int id = in.readInt();
+        synchronized (counterLock) {
+            counters.remove(id);
+        }
+    }
+
+    private static void getPriority(XClient client, XInputStream in, XOutputStream out) throws IOException {
+        in.skip(4);
+        try (XStreamLock lock = out.lock()) {
+            out.writeByte(RESPONSE_CODE_SUCCESS);
+            out.writeByte((byte)0);
+            out.writeShort(client.getSequenceNumber());
+            out.writeInt(0);
+            out.writeInt(0);
+            out.writePad(20);
+        }
+    }
+
+    private static void queryAlarm(XClient client, XInputStream in, XOutputStream out) throws IOException {
+        in.skip(4);
+        // An inactive alarm on no counter: trigger (counter, value type, value, test type),
+        // delta, events, state
+        try (XStreamLock lock = out.lock()) {
+            out.writeByte(RESPONSE_CODE_SUCCESS);
+            out.writeByte((byte)0);
+            out.writeShort(client.getSequenceNumber());
+            out.writeInt(2);
+            out.writeInt(0);
+            out.writeInt(0);
+            out.writeInt(0);
+            out.writeInt(0);
+            out.writeInt(0);
+            out.writeInt(0);
+            out.writeInt(0);
+            out.writeByte((byte)0);
+            out.writeByte((byte)2);
+            out.writePad(2);
+        }
+    }
+
     @Override
     public void onFreeResource(XResource resource) {
         synchronized (fenceLock) {
@@ -196,6 +325,40 @@ public class SyncExtension implements Extension, XResourceManager.OnResourceLife
                               XOutputStream out) throws IOException, XRequestError {
         int opcode = client.getRequestData();
         switch (opcode) {
+            case ClientOpcodes.INITIALIZE:
+                initialize(client, in, out);
+                break;
+            case ClientOpcodes.LIST_SYSTEM_COUNTERS:
+                listSystemCounters(client, out);
+                break;
+            case ClientOpcodes.CREATE_COUNTER:
+                createCounter(in);
+                break;
+            case ClientOpcodes.SET_COUNTER:
+                setCounter(in, false);
+                break;
+            case ClientOpcodes.CHANGE_COUNTER:
+                setCounter(in, true);
+                break;
+            case ClientOpcodes.QUERY_COUNTER:
+                queryCounter(client, in, out);
+                break;
+            case ClientOpcodes.DESTROY_COUNTER:
+                destroyCounter(in);
+                break;
+            case ClientOpcodes.QUERY_ALARM:
+                queryAlarm(client, in, out);
+                break;
+            case ClientOpcodes.GET_PRIORITY:
+                getPriority(client, in, out);
+                break;
+            case ClientOpcodes.AWAIT:
+            case ClientOpcodes.CREATE_ALARM:
+            case ClientOpcodes.CHANGE_ALARM:
+            case ClientOpcodes.DESTROY_ALARM:
+            case ClientOpcodes.SET_PRIORITY:
+                client.skipRequest();
+                break;
             case ClientOpcodes.CREATE_FENCE:
                 createFence(client, in, out);
                 break;

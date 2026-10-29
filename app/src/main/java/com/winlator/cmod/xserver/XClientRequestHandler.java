@@ -11,6 +11,7 @@ import com.winlator.cmod.xserver.errors.BadRequest;
 import com.winlator.cmod.xserver.errors.XRequestError;
 import com.winlator.cmod.xserver.extensions.Extension;
 import com.winlator.cmod.xserver.requests.AtomRequests;
+import com.winlator.cmod.xserver.requests.ColormapRequests;
 import com.winlator.cmod.xserver.requests.CursorRequests;
 import com.winlator.cmod.xserver.requests.DrawRequests;
 import com.winlator.cmod.xserver.requests.ExtensionRequests;
@@ -389,7 +390,14 @@ public class XClientRequestHandler implements RequestHandler {
                     client.skipRequest();
                     break;
                 case ClientOpcodes.FREE_COLORMAP:
+                case ClientOpcodes.FREE_COLORS:
                     client.skipRequest();
+                    break;
+                case ClientOpcodes.ALLOC_COLOR:
+                    ColormapRequests.allocColor(client, inputStream, outputStream);
+                    break;
+                case ClientOpcodes.QUERY_COLORS:
+                    ColormapRequests.queryColors(client, inputStream, outputStream);
                     break;
                 case ClientOpcodes.CREATE_CURSOR:
                     try (XLock lock = client.xServer.lock(XServer.Lockable.PIXMAP_MANAGER, XServer.Lockable.DRAWABLE_MANAGER, XServer.Lockable.CURSOR_MANAGER)) {

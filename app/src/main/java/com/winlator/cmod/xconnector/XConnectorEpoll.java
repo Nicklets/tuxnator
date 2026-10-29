@@ -117,6 +117,7 @@ public class XConnectorEpoll implements Runnable {
             else requestHandler.handleRequest(client);
         }
         catch (IOException e) {
+            android.util.Log.w("XConnectorEpoll", "Closing client connection " + fd + " after an I/O error", e);
             killConnection(client);
         }
     }
