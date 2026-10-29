@@ -57,6 +57,13 @@
             android:exported="false" />
 
         <activity
+            android:name="com.winlator.cmod.ui.settings.LinuxContainerSettingsActivity"
+            android:theme="@style/AppThemeFullscreen.Dark"
+            android:screenOrientation="sensor"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation"
+            android:exported="false" />
+
+        <activity
             android:name="com.winlator.cmod.MainActivity"
             android:theme="@style/AppTheme.Dark"
             android:screenOrientation="sensor"

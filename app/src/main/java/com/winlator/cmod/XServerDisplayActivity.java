@@ -109,6 +109,8 @@ import com.winlator.cmod.xconnector.UnixSocketConfig;
 import com.winlator.cmod.xenvironment.ImageFs;
 import com.winlator.cmod.xenvironment.XEnvironment;
 import com.winlator.cmod.xenvironment.components.ALSAServerComponent;
+import com.winlator.cmod.box64.Box64PresetManager;
+import com.winlator.cmod.xenvironment.LinuxContainerSettings;
 import com.winlator.cmod.xenvironment.LinuxRootfs;
 import com.winlator.cmod.xenvironment.components.GuestProgramLauncherComponent;
 import com.winlator.cmod.xenvironment.components.LinuxProgramLauncherComponent;
@@ -632,6 +634,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, builder.build());
 
         Runnable runnable = () -> {
+            // Before setupUI: Linux mode picks the renderer from the Linux container settings
+            resolveLinuxExecutable();
             setupUI();
             setupSidebarInputControls();
             if (controlsProfile.isEmpty()) {
@@ -639,7 +643,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 simulateConfirmInputControlsDialog();
             }
             Executors.newSingleThreadExecutor().execute(() -> {
-                resolveLinuxExecutable();
                 if (!isLinuxMode()) {
                     setupWineSystemFiles();
                 }
@@ -1198,6 +1201,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
             // guest, so only the shortcut's own variables are passed along
             LinuxProgramLauncherComponent linuxLauncher = new LinuxProgramLauncherComponent(LinuxRootfs.find(this), linuxRootfsCommand);
             linuxLauncher.setHomeDir(container.getRootDir());
+            String box64Preset = new LinuxContainerSettings(this).getBox64Preset();
+            if (!box64Preset.equals(LinuxContainerSettings.BOX64_PRESET_DEFAULT)) {
+                linuxLauncher.putEnvVars(Box64PresetManager.getEnvVars("box64", this, box64Preset));
+            }
             if (shortcut != null) linuxLauncher.putEnvVars(new EnvVars(shortcut.getExtra("envVars")));
             linuxLauncher.setTerminationCallback((status) -> runOnUiThread(this::exit));
             environment.addComponent(linuxLauncher);
@@ -1244,7 +1251,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         boolean useDisplayX = isDisplayXEnabled();
 
-        boolean useEGL = !useDisplayX && (shortcut != null ? shortcut.getRendererNative()
+        // Linux mode takes the renderer and its driver from Settings > Linux container, unless the
+        // shortcut sets them itself
+        LinuxContainerSettings linuxSettings = isLinuxMode() ? new LinuxContainerSettings(this) : null;
+        boolean useEGL;
+        if (linuxSettings != null && shortcut.getExtra("rendererNative", null) == null) {
+            useEGL = !useDisplayX && linuxSettings.getRenderer().equals(LinuxContainerSettings.RENDERER_OPENGL);
+        }
+        else useEGL = !useDisplayX && (shortcut != null ? shortcut.getRendererNative()
                 : (container != null && container.getRendererNative()));
 
         if (useDisplayX) {
@@ -1273,7 +1287,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (renderer instanceof VulkanXServerView) {
             VulkanXServerView vkRenderer = (VulkanXServerView) renderer;
 
-            String rendererDriverId = shortcut != null ? shortcut.getRendererDriverId()
+            String rendererDriverId;
+            if (linuxSettings != null && shortcut.getExtra("rendererDriverId", null) == null) {
+                rendererDriverId = linuxSettings.getRendererDriverId();
+                // Drivers shipped in the APK are only extracted on first use
+                AdrenotoolsManager adrenotoolsManager = new AdrenotoolsManager(this);
+                if (adrenotoolsManager.isFromResources(rendererDriverId)) adrenotoolsManager.extractDriverFromResources(rendererDriverId);
+            }
+            else rendererDriverId = shortcut != null ? shortcut.getRendererDriverId()
                     : (container != null ? container.getRendererDriverId() : "");
             if (rendererDriverId == null || rendererDriverId.isEmpty()) {
                 rendererDriverId = graphicsDriverConfig != null ? graphicsDriverConfig.get("version") : null;

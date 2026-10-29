@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -187,6 +188,11 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("containers") {
                 NavigationRow(Icons.Outlined.Dns, "Containers", "Create and manage Windows environments") {
                     context.startActivity(Intent(context, ContainersSettingsActivity::class.java))
+                }
+            }
+            item("linux-container") {
+                NavigationRow(Icons.Outlined.Terminal, "Contêiner Linux", "Renderizador, driver e Box64 do modo Linux") {
+                    context.startActivity(Intent(context, LinuxContainerSettingsActivity::class.java))
                 }
             }
             item("components") {
