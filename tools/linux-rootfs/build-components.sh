@@ -22,7 +22,7 @@ export DEBIAN_FRONTEND=noninteractive
 sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
 apt-get update
 apt-get install -y --no-install-recommends \
-    build-essential cmake git ca-certificates python3 pkg-config \
+    build-essential cmake git ca-certificates python3 pkg-config file \
     meson ninja-build glslang-tools python3-mako python3-yaml python3-packaging python3-ply
 apt-get build-dep -y mesa
 echo "::endgroup::"
@@ -48,6 +48,16 @@ ninja -C "$SRC/mesa/build" -j "$JOBS"
 DESTDIR="$STAGING" ninja -C "$SRC/mesa/build" install
 # Headers and pkg-config files are not needed at runtime
 rm -rf "$STAGING/usr/include" "$STAGING/usr/lib/aarch64-linux-gnu/pkgconfig"
+# Move Mesa's debug info to $DEBUG_STAGING (shipped as a separate package for gdb), leaving a
+# .gnu_debuglink in the rootfs; gdb looks the files up under /usr/lib/debug/<path>.debug
+DEBUG_STAGING="${DEBUG_STAGING:-$WORK/debug-staging}"
+find "$STAGING/usr/lib/aarch64-linux-gnu" -type f -name '*.so*' | while read -r lib; do
+    file -b "$lib" | grep -q 'ELF.*with debug_info' || continue
+    rel="${lib#"$STAGING"}"
+    mkdir -p "$DEBUG_STAGING/usr/lib/debug$(dirname "$rel")"
+    objcopy --only-keep-debug "$lib" "$DEBUG_STAGING/usr/lib/debug$rel.debug"
+    objcopy --strip-debug --add-gnu-debuglink="$DEBUG_STAGING/usr/lib/debug$rel.debug" "$lib"
+done
 echo "::endgroup::"
 
 echo "::group::Winlator glibc shims"

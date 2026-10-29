@@ -183,7 +183,9 @@ int shmget(key_t key, size_t size, int flags) {
 void* shmat(int shmid, const void* shmaddr, int shmflg) {
     pthread_mutex_lock(&mutex);
 
-    void* addr;
+    /* NULL unless the segment is found: an uninitialized pointer here made callers that only check
+     * for (void *)-1 (Mesa's X11 WSI) write to garbage */
+    void* addr = NULL;
     int index = find_shmemory_index(shmid);
     if (index != -1) {
         if (shmemories[index].addr == NULL) {

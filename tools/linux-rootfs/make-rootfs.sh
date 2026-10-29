@@ -71,6 +71,12 @@ SIZE="$(stat -c %s "$OUT/$NAME.tar.zst")"
 UNPACKED="$(du -sb "$ROOTFS" | cut -f1)"
 echo "$SHA256  $NAME.tar.zst" > "$OUT/$NAME.tar.zst.sha256"
 
+# Debug info split off by build-components.sh, extracted over the rootfs only when debugging
+if [ -d "$WORK/debug-staging" ]; then
+    mkdir -p "$WORK/out-debug"
+    tar --numeric-owner -C "$WORK/debug-staging" -cf - . | zstd -19 -T0 -q -o "$WORK/out-debug/$NAME-debug.tar.zst"
+fi
+
 cat > "$OUT/$NAME.manifest.json" <<EOF
 {
   "name": "$NAME",
