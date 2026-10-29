@@ -94,6 +94,7 @@ struct VkTable {
     PFN_vkGetFenceStatus GetFenceStatus;
 
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID GetAndroidHardwareBufferPropertiesANDROID;
+    PFN_vkGetMemoryFdPropertiesKHR GetMemoryFdPropertiesKHR;
 };
 
 #include <android/log.h>
@@ -163,6 +164,8 @@ public:
     void updatePointerPosition(short x, short y);
     void updateWindowContent(int64_t id, void* pixels, short w, short h, short stride, int x, int y);
     void updateWindowContentAHB(int64_t id, AHardwareBuffer* ahb, short w, short h, int x, int y);
+    bool updateWindowContentDmaBuf(int64_t id, int64_t key, int fd, int w, int h, int stride, int offset);
+    void releaseDmaBuf(int64_t key);
     void updateCursorImage(void* pixels, short w, short h, short stride, short hotX, short hotY);
     void setCursorVisible(bool visible);
     void setRenderList(const int64_t* ids, const int* xs, const int* ys, int count);
@@ -224,6 +227,9 @@ private:
         bool                 isAHB          = false;
         bool                 needsTransition = false;
         AHardwareBuffer*     ahb            = nullptr;
+        // Resources owned by dmaBufImportCache; stg is the imported client dma-buf
+        bool                 borrowed       = false;
+        uint32_t             rowLength      = 0;
     };
 
     struct RenderEntry { int64_t id; int x, y; };
@@ -234,6 +240,7 @@ private:
         int             x=0, y=0, w=0, h=0;
         bool            needsTransition = false;
         bool            isAHB          = false;
+        uint32_t        rowLength      = 0;
     };
 
     struct WinNode {
@@ -290,6 +297,10 @@ public:
 
     std::unordered_map<AHardwareBuffer*, WinTex>              ahbImportCache;
     std::unordered_map<int64_t, std::vector<AHardwareBuffer*>> windowAhbs;
+
+    // Client dma-bufs (DRI3 pixmaps) keyed by the pixmap's drawable id
+    std::unordered_map<int64_t, WinTex>                        dmaBufImportCache;
+    bool dmaBufImportSupported = false;
 
     std::vector<WinTex>    deleteQueue;
     std::vector<RenderEntry> renderList;
@@ -421,6 +432,7 @@ public:
 
     bool  createWinTexResources(WinTex& wt, int w, int h);
     bool  importAHBToWinTex(WinTex& wt, AHardwareBuffer* ahb);
+    bool  importDmaBufToWinTex(WinTex& wt, int fd, int w, int h, int stride);
     void  cleanupAllAHBCache();
     void  flushDeleteQueue();
     void  destroyWinTex(WinTex& wt);

@@ -49,6 +49,15 @@ for f in src/vulkan/meson.build src/vulkan/wsi/meson.build; do
         || { echo "display WSI condition not found in $f" >&2; exit 1; }
     sed -i 's/^if system_has_kms_drm and not with_platform_android$/if false/' "$SRC/mesa/$f"
 done
+# Without explicit sync or a dma-buf semaphore, the X11 WSI presents FIFO frames before the GPU has
+# finished them, counting on the kernel's implicit sync. KGSL has none (and Android kernels lack
+# DMA_BUF_IOCTL_IMPORT_SYNC_FILE), and the X server reads the dma-buf on another GPU queue, so wait
+# for the frame's fence on the WSI's present thread instead.
+grep -qxF '            x11_needs_wait_for_fences(chain->base.wsi, wsi_conn, present_mode) &&' \
+    "$SRC/mesa/src/vulkan/wsi/wsi_common_x11.c" \
+    || { echo "fence wait condition not found in wsi_common_x11.c" >&2; exit 1; }
+sed -i 's/^            x11_needs_wait_for_fences(chain->base.wsi, wsi_conn, present_mode) &&$/            (x11_needs_wait_for_fences(chain->base.wsi, wsi_conn, present_mode) || !chain->base.dma_buf_semaphore) \&\&/' \
+    "$SRC/mesa/src/vulkan/wsi/wsi_common_x11.c"
 # shellcheck disable=SC2086
 meson setup "$SRC/mesa/build" "$SRC/mesa" \
     --prefix=/usr --libdir=lib/aarch64-linux-gnu $MESA_MESON_FLAGS

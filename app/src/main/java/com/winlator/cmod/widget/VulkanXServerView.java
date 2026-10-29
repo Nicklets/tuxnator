@@ -114,6 +114,9 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
         ByteBuffer pixels, short width, short height, short stride, int x, int y);
     @FastNative private native void nativeUpdateWindowContentAHB(long handle, long id,
         long ahbPtr, short width, short height, int x, int y);
+    private native boolean nativeUpdateWindowContentDmaBuf(long handle, long id, long key,
+        int fd, int width, int height, int stride, int offset);
+    private native void nativeReleaseDmaBuf(long handle, long key);
     @FastNative private native void nativeSetTransformAndScissor(long handle,
         float ox, float oy, float sx, float sy,
         boolean hasScissor, int scX, int scY, int scW, int scH);
@@ -476,6 +479,28 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
                         pixmap.backingAHB, pixmap.width, pixmap.height, rx, ry);
                 }
             }
+        }
+    }
+
+    /**
+     * Shows a DRI3 pixmap's dma-buf as the window's content; the GPU copies it into the window
+     * texture. Returns false if the renderer can't import it (the caller then copies on the CPU).
+     */
+    public boolean updateWindowContentDmaBuf(Window window, Drawable pixmap, int fd, int stride, int offset) {
+        if (window.id == fpsWindowId) {
+            if (hudRef != null) hudRef.onFrame();
+            if (classicHudRef != null) classicHudRef.update();
+        }
+        synchronized (lock) {
+            if (nativeHandle == 0) return false;
+            return nativeUpdateWindowContentDmaBuf(nativeHandle, did(window.getContent()), did(pixmap),
+                fd, pixmap.width, pixmap.height, stride, offset);
+        }
+    }
+
+    public void releaseDmaBuf(Drawable pixmap) {
+        synchronized (lock) {
+            if (nativeHandle != 0) nativeReleaseDmaBuf(nativeHandle, did(pixmap));
         }
     }
 

@@ -305,6 +305,21 @@ public class PresentExtension implements Extension,
                 renderer instanceof EGLXServerView ||
                 renderer instanceof DisplayXServerView;
 
+            // Zero-copy for DRI3 pixmaps: the renderer reads the client's dma-buf on the GPU
+            DRI3Extension.DmaBufSource dmaBuf = getDmaBufSource(client, pixmap);
+            if (dmaBuf != null && !dmaBuf.gpuImportFailed
+                    && renderer instanceof VulkanXServerView && window.attributes.isMapped()) {
+                if (((VulkanXServerView) renderer).updateWindowContentDmaBuf(window, pixmap.drawable,
+                        dmaBuf.fd, dmaBuf.stride, dmaBuf.offset)) {
+                    sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.FLIP, ust, msc);
+                    flushClientOutput(client);
+                    scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, renderer);
+                    return;
+                }
+                android.util.Log.w("PresentExtension", "GPU import of dma-buf pixmap " + pixmap.id + " failed, copying on the CPU");
+                dmaBuf.gpuImportFailed = true;
+            }
+
             if (supportsDirectScanout && pixmap.drawable.isDirectScanout()) {
                 sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.FLIP, ust, msc);
                 flushClientOutput(client);
@@ -329,6 +344,11 @@ public class PresentExtension implements Extension,
                 scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, renderer);
             }
         }
+    }
+
+    private static DRI3Extension.DmaBufSource getDmaBufSource(XClient client, Pixmap pixmap) {
+        DRI3Extension dri3 = client.xServer.getExtension(DRI3Extension.MAJOR_OPCODE);
+        return dri3 != null ? dri3.getDmaBufSource(pixmap) : null;
     }
 
     // Pixmaps from Mesa's X11 WSI are backed by a dma-buf; refresh the drawable from it first

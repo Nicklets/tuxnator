@@ -3,6 +3,7 @@ package com.winlator.cmod.xserver.extensions;
 import android.util.Log;
 import android.util.SparseArray;
 import com.winlator.cmod.renderer.GPUImage;
+import com.winlator.cmod.widget.VulkanXServerView;
 
 import static com.winlator.cmod.xserver.XClientRequestHandler.RESPONSE_CODE_SUCCESS;
 
@@ -33,10 +34,13 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
     // Pixmaps backed by a client dma-buf (Mesa's X11 WSI), keyed by pixmap id
     private final SparseArray<DmaBufSource> dmaBufSources = new SparseArray<>();
 
-    private static class DmaBufSource {
+    static class DmaBufSource {
+        // Kept open for the renderer to import (see VulkanXServerView.updateWindowContentDmaBuf)
+        int fd;
         long map;
         int offset;
         int stride;
+        boolean gpuImportFailed;
     }
 
     static {
@@ -138,18 +142,22 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
         sync.createShmFence(fenceId, drawableId, initiallyTriggered, fd);
     }
 
+    DmaBufSource getDmaBufSource(Pixmap pixmap) {
+        synchronized (dmaBufSources) {
+            return dmaBufSources.get(pixmap.id);
+        }
+    }
+
     /** Copies a dma-buf backed pixmap's current contents into its drawable before it's used. */
     public void syncDmaBufPixmap(Pixmap pixmap) {
-        DmaBufSource source;
-        synchronized (dmaBufSources) {
-            source = dmaBufSources.get(pixmap.id);
-        }
+        DmaBufSource source = getDmaBufSource(pixmap);
         if (source == null) return;
         Drawable drawable = pixmap.drawable;
         nativeCopyDmaBufToAHB(source.map, source.offset, source.stride, drawable.width, drawable.height, drawable.backingAHB, drawable.getStride());
     }
 
     private void pixmapFromDmaBuf(XClient client, int pixmapId, short width, short height, byte depth, int stride, int offset, int fd) throws XRequestError {
+        boolean keepFd = false;
         try {
             Drawable drawable = client.xServer.drawableManager.createDrawable(pixmapId, width, height, depth);
             if (drawable == null) throw new BadIdChoice(pixmapId);
@@ -157,6 +165,7 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
             client.registerAsOwnerOfResource(pixmap);
 
             DmaBufSource source = new DmaBufSource();
+            source.fd = fd;
             source.map = nativeMapDmaBuf(fd, offset + stride * height);
             source.offset = offset;
             source.stride = stride;
@@ -164,11 +173,12 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
                 synchronized (dmaBufSources) {
                     dmaBufSources.put(pixmapId, source);
                 }
+                keepFd = true;
             }
             else Log.e("Dri3", "Could not map dma-buf for pixmap " + pixmapId);
         }
         finally {
-            XConnectorEpoll.closeFd(fd);
+            if (!keepFd) XConnectorEpoll.closeFd(fd);
         }
     }
 
@@ -309,7 +319,10 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
             synchronized (dmaBufSources) {
                 DmaBufSource source = dmaBufSources.get(pixmap.id);
                 if (source != null) {
+                    if (xServer.getXServerView() instanceof VulkanXServerView)
+                        ((VulkanXServerView)xServer.getXServerView()).releaseDmaBuf(pixmap.drawable);
                     nativeUnmapDmaBuf(source.map);
+                    XConnectorEpoll.closeFd(source.fd);
                     dmaBufSources.remove(pixmap.id);
                 }
             }

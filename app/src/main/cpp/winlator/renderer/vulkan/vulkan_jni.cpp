@@ -119,6 +119,23 @@ Java_com_winlator_cmod_widget_VulkanXServerView_nativeUpdateWindowContentAHB(
         r->updateWindowContentAHB(id, reinterpret_cast<AHardwareBuffer*>(ahbPtr), w, h, x, y);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeUpdateWindowContentDmaBuf(
+    JNIEnv*, jobject, jlong handle, jlong id, jlong key, jint fd,
+    jint w, jint h, jint stride, jint offset)
+{
+    auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
+    return r && r->updateWindowContentDmaBuf(id, key, fd, w, h, stride, offset);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeReleaseDmaBuf(
+    JNIEnv*, jobject, jlong handle, jlong key)
+{
+    auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
+    if (r) r->releaseDmaBuf(key);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_winlator_cmod_widget_VulkanXServerView_nativeSetTransformAndScissor(
     JNIEnv*, jobject, jlong handle,
