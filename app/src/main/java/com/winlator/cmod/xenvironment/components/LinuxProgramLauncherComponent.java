@@ -4,6 +4,7 @@ import android.util.Log;
 
 import com.winlator.cmod.core.Callback;
 import com.winlator.cmod.core.EnvVars;
+import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.xenvironment.EnvironmentComponent;
 import com.winlator.cmod.xenvironment.ImageFs;
 import com.winlator.cmod.xenvironment.LinuxRootfs;
@@ -132,7 +133,17 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         if (new File(rootfs.getRootDir(), "usr/lib/winlator/libfakeudev.so").isFile()) {
             preload += ":/usr/lib/winlator/libfakeudev.so";
         }
+        // Runs x86 programs through Box64 when a file manager or script executes them (rootfs v10+)
+        if (new File(rootfs.getRootDir(), "usr/lib/winlator/libbox64exec.so").isFile()) {
+            preload += ":/usr/lib/winlator/libbox64exec.so";
+        }
         launcher.putEnv("LD_PRELOAD", preload);
+        // The X server's XInput2 only reports raw events, and GTK3/Qt take their pointer and
+        // keyboard input from XI2 device events: have them use core events instead
+        launcher.putEnv("GDK_CORE_DEVICE_EVENTS", "1");
+        launcher.putEnv("QT_XCB_NO_XI2", "1");
+        launcher.putEnv("TZ", java.util.TimeZone.getDefault().getID());
+        ensurePasswdEntry();
         launcher.putEnv("FAKE_EVDEV_DIR", "/tmp/fake-input");
         // libudev is in the rootfs but there is no udevd, so SDL2's udev enumeration fails and the
         // whole joystick subsystem with it; scanning /dev/input directly goes through libfakeinput
@@ -150,5 +161,29 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
 
         for (String name : envVars) launcher.putEnv(name, envVars.get(name));
         return launcher;
+    }
+
+    /**
+     * Guest programs run with the app's Android uid, which the rootfs doesn't know (its "user" is
+     * 1000). dbus-daemon, and anything else looking itself up with getpwuid(), refuses to start
+     * without an entry, so add one for the current uid.
+     */
+    private void ensurePasswdEntry() {
+        int uid = android.os.Process.myUid();
+        String entry = ":" + uid + ":";
+        try {
+            File passwd = new File(rootfs.getRootDir(), "etc/passwd");
+            if (passwd.isFile() && !FileUtils.readString(passwd).contains(entry)) {
+                FileUtils.writeString(passwd, FileUtils.readString(passwd)
+                    + "user:x" + entry + uid + ":user:" + GUEST_HOME + ":/bin/bash\n");
+            }
+            File group = new File(rootfs.getRootDir(), "etc/group");
+            if (group.isFile() && !FileUtils.readString(group).contains(entry)) {
+                FileUtils.writeString(group, FileUtils.readString(group) + "user:x" + entry + "\n");
+            }
+        }
+        catch (Exception e) {
+            Log.w(TAG, "Could not add uid " + uid + " to the rootfs passwd/group", e);
+        }
     }
 }

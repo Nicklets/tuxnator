@@ -1,0 +1,15 @@
+#!/bin/sh
+# Linux desktop session for the app's X server: Openbox, LXPanel and PCManFM's desktop.
+# Started by the app's "Área de trabalho Linux" shortcut through dbus-run-session.
+export XDG_CURRENT_DESKTOP=LXDE XDG_SESSION_DESKTOP=LXDE DESKTOP_SESSION=LXDE
+
+mkdir -p "$HOME/Desktop"
+openbox &
+wm=$!
+# The panel and the desktop want the window manager's EWMH properties on the root window
+sleep 1
+lxpanel --profile default &
+pcmanfm --desktop &
+
+# The session lasts as long as the window manager
+wait $wm

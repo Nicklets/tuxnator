@@ -1,1 +1,3 @@
 
+# Files that end up inside the Linux rootfs (scripts, configs) must keep LF endings
+tools/linux-rootfs/** text eol=lf

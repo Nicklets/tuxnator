@@ -1,6 +1,8 @@
 package com.winlator.cmod.ui.settings
 
+import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
@@ -19,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.DeveloperBoard
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Memory
@@ -43,8 +47,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.winlator.cmod.XServerDisplayActivity
 import com.winlator.cmod.box64.Box64PresetManager
+import com.winlator.cmod.container.ContainerManager
 import com.winlator.cmod.contents.AdrenotoolsManager
+import com.winlator.cmod.core.FileUtils
+import java.io.File
 import com.winlator.cmod.ui.applyAppFullscreen
 import com.winlator.cmod.ui.theme.WinZTheme
 import com.winlator.cmod.xenvironment.LinuxContainerSettings
@@ -89,6 +97,7 @@ class LinuxContainerSettingsActivity : AppCompatActivity() {
                     onRenderer = settings::setRenderer,
                     onDriver = onDriver,
                     onBox64Preset = settings::setBox64Preset,
+                    onOpenDesktop = ::openDesktop,
                     onBack = { finish() }
                 )
             }
@@ -98,6 +107,45 @@ class LinuxContainerSettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         applyAppFullscreen(this)
+    }
+
+    /**
+     * Starts the Openbox/LXPanel/PCManFM session from a shortcut in the first container's
+     * desktop, created here, so it also shows up in the library like any Linux shortcut.
+     */
+    private fun openDesktop() {
+        val rootfs = LinuxRootfs.find(this)
+        if (!File(rootfs.rootDir, "usr/local/bin/tuxnator-desktop").isFile) {
+            Toast.makeText(this, "A área de trabalho precisa do rootfs v10 ou mais novo", Toast.LENGTH_LONG).show()
+            return
+        }
+        val container = ContainerManager(this).containers.firstOrNull()
+        if (container == null) {
+            Toast.makeText(this, "Crie um contêiner primeiro", Toast.LENGTH_LONG).show()
+            return
+        }
+        val shortcutFile = File(container.desktopDir, "$DESKTOP_SHORTCUT_NAME.desktop")
+        if (!shortcutFile.isFile) {
+            container.desktopDir.mkdirs()
+            FileUtils.writeString(shortcutFile, """
+                [Desktop Entry]
+                Name=$DESKTOP_SHORTCUT_NAME
+                Exec=dbus-run-session -- tuxnator-desktop
+                Type=Application
+
+                [Extra Data]
+                linuxRuntime=rootfs
+            """.trimIndent() + "\n")
+        }
+        startActivity(Intent(this, XServerDisplayActivity::class.java).apply {
+            putExtra("container_id", container.id)
+            putExtra("shortcut_path", shortcutFile.path)
+            putExtra("shortcut_name", DESKTOP_SHORTCUT_NAME)
+        })
+    }
+
+    private companion object {
+        const val DESKTOP_SHORTCUT_NAME = "Área de trabalho Linux"
     }
 }
 
@@ -112,6 +160,7 @@ private fun LinuxContainerSettingsScreen(
     onRenderer: (String) -> Unit,
     onDriver: (String) -> Unit,
     onBox64Preset: (String) -> Unit,
+    onOpenDesktop: () -> Unit,
     onBack: () -> Unit
 ) {
     var renderer by remember { mutableStateOf(initialRenderer) }
@@ -141,6 +190,28 @@ private fun LinuxContainerSettingsScreen(
                             Text("Modo Linux", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
                             Text(rootfsStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                    }
+                }
+            }
+
+            item("desktop-title") { SectionTitle("ÁREA DE TRABALHO") }
+            item("desktop") {
+                Surface(
+                    onClick = onOpenDesktop,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SmallIcon(Icons.Outlined.DesktopWindows)
+                        Spacer(Modifier.width(11.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Abrir área de trabalho Linux", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                            Text("Gerenciador de arquivos, barra de tarefas e janelas: mova e descompacte arquivos e rode programas Linux",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

@@ -97,6 +97,19 @@ gcc -O2 -shared -fPIC -fvisibility=hidden -Wall -Wextra \
     "$HERE/shims/fakeudev.c" -ludev
 nm -D --defined-only "$STAGING/usr/lib/winlator/libfakeudev.so" | grep -q " T udev_monitor_new_from_netlink\$" \
     || { echo "libfakeudev.so does not export udev_monitor_new_from_netlink" >&2; exit 1; }
+# Runs x86 programs through Box64 when something executes them (no binfmt_misc under PRoot)
+gcc -O2 -shared -fPIC -fvisibility=hidden -Wall -Wextra \
+    -o "$STAGING/usr/lib/winlator/libbox64exec.so" "$HERE/shims/box64exec.c" -ldl
+for sym in execve execvp posix_spawn posix_spawnp; do
+    nm -D --defined-only "$STAGING/usr/lib/winlator/libbox64exec.so" | grep -q " T $sym\$" \
+        || { echo "libbox64exec.so does not export $sym" >&2; exit 1; }
+done
+echo "::endgroup::"
+
+echo "::group::Desktop session and defaults"
+# tuxnator-desktop and system-wide defaults for PCManFM/libfm, copied over the rootfs
+cp -a "$HERE/overlay/." "$STAGING/"
+chmod 755 "$STAGING/usr/local/bin/tuxnator-desktop"
 echo "::endgroup::"
 
 # Record what was built, for the manifest

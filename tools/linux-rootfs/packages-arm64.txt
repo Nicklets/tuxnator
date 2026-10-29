@@ -53,3 +53,20 @@ strace
 # SDL2 manual tests (checkkeys, testwm2...) and an X11 protocol tracer, for input/X server bring-up
 libsdl2-tests
 xtrace
+# Linux desktop (Settings > Contêiner Linux > desktop): Openbox, LXPanel and PCManFM, with
+# archive extraction (Xarchiver, unzip, 7z, xz) and a terminal
+openbox
+lxpanel
+lxmenu-data
+pcmanfm
+xarchiver
+unzip
+p7zip-full
+xz-utils
+lxterminal
+lxde-icon-theme
+adwaita-icon-theme
+librsvg2-common
+desktop-file-utils
+gsettings-desktop-schemas
+libglib2.0-bin
