@@ -229,6 +229,8 @@ private:
         AHardwareBuffer*     ahb            = nullptr;
         // Resources owned by dmaBufImportCache; stg is the imported client dma-buf
         bool                 borrowed       = false;
+        // Owns an import whose pixmap is gone: keeps showing its last frame, takes no CPU uploads
+        bool                 adopted        = false;
         uint32_t             rowLength      = 0;
     };
 

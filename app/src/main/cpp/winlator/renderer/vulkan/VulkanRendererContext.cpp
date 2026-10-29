@@ -1270,7 +1270,7 @@ void VulkanRendererContext::updateWindowContent(int64_t id, void* px, short w, s
     {
         std::lock_guard<std::mutex> lk(renderMutex);
         WinTex& wt=texMap[id];
-        if (wt.borrowed) destroyWinTex(wt);
+        if (wt.borrowed || wt.adopted) destroyWinTex(wt);
         if (wt.img==VK_NULL_HANDLE || wt.w!=w || wt.h!=h) {
             if (wt.img!=VK_NULL_HANDLE) destroyWinTex(wt);
             if (!createWinTexResources(wt,w,h)) { texMap.erase(id); return; }
@@ -1311,6 +1311,7 @@ void VulkanRendererContext::updateWindowContentAHB(int64_t id, AHardwareBuffer* 
     }
     WinTex& src = cit->second;
     WinTex& wt  = texMap[id];
+    if (wt.adopted) destroyWinTex(wt);
     wt.img  = src.img; wt.mem  = src.mem; wt.view = src.view; wt.ds   = src.ds;
     wt.isAHB = true; wt.ahb  = ahb; wt.w = src.w; wt.h = src.h;
     if (src.needsTransition) { wt.needsTransition = true; src.needsTransition = false; }
@@ -1418,11 +1419,23 @@ void VulkanRendererContext::releaseDmaBuf(int64_t key) {
     std::lock_guard<std::mutex> lk(renderMutex);
     auto cit = dmaBufImportCache.find(key);
     if (cit == dmaBufImportCache.end()) return;
+    // Clients free their swapchain pixmaps while the window still shows one (STK between its
+    // loading screen and the race): the window takes over that import, holding the last frame
+    // like a copied pixmap would, until it gets new content
+    bool adopted = false;
     for (auto it = texMap.begin(); it != texMap.end(); ) {
-        if (it->second.borrowed && it->second.img == cit->second.img) it = texMap.erase(it);
+        if (it->second.borrowed && it->second.img == cit->second.img) {
+            if (!adopted) {
+                it->second.borrowed = false;
+                it->second.adopted = true;
+                adopted = true;
+                ++it;
+            }
+            else it = texMap.erase(it);
+        }
         else ++it;
     }
-    deleteQueue.push_back(cit->second);
+    if (!adopted) deleteQueue.push_back(cit->second);
     dmaBufImportCache.erase(cit);
     needsRender.store(true); dirtyCV.notify_one();
 }
