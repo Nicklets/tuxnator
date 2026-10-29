@@ -20,6 +20,7 @@ add_library(winlator SHARED
         xr/renderer.c
         winlator/drawable.c
         winlator/gpu_image.c
+        winlator/dri3_native.c
         winlator/sysvshared_memory.c
         winlator/xconnector_epoll.c
         winlator/alsa_client.c

@@ -185,6 +185,7 @@ public class PresentExtension implements Extension,
         static final byte QUERY_VERSION = 0;
         static final byte PRESENT_PIXMAP = 1;
         static final byte SELECT_INPUT = 3;
+        static final byte QUERY_CAPABILITIES = 4;
     }
 
     private static class Event {
@@ -312,6 +313,7 @@ public class PresentExtension implements Extension,
                 scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, renderer);
 
             } else if (renderer != null && window.attributes.isMapped()) {
+                syncDmaBufPixmap(client, pixmap);
                 content.copyArea((short)0, (short)0, xOff, yOff,
                     pixmap.drawable.width, pixmap.drawable.height, pixmap.drawable);
                 sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.COPY, ust, msc);
@@ -319,12 +321,32 @@ public class PresentExtension implements Extension,
                 scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, renderer);
 
             } else {
+                syncDmaBufPixmap(client, pixmap);
                 content.copyArea((short)0, (short)0, xOff, yOff,
                     pixmap.drawable.width, pixmap.drawable.height, pixmap.drawable);
                 sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.COPY, ust, msc);
                 flushClientOutput(client);
                 scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, renderer);
             }
+        }
+    }
+
+    // Pixmaps from Mesa's X11 WSI are backed by a dma-buf; refresh the drawable from it first
+    private static void syncDmaBufPixmap(XClient client, Pixmap pixmap) {
+        DRI3Extension dri3 = client.xServer.getExtension(DRI3Extension.MAJOR_OPCODE);
+        if (dri3 != null) dri3.syncDmaBufPixmap(pixmap);
+    }
+
+    private void queryCapabilities(XClient client, XInputStream in, XOutputStream out) throws IOException {
+        in.readInt(); // target window or CRTC
+        try (XStreamLock lock = out.lock()) {
+            out.writeByte(RESPONSE_CODE_SUCCESS);
+            out.writeByte((byte)0);
+            out.writeShort(client.getSequenceNumber());
+            out.writeInt(0);
+            // No async flips, fences or syncobjs: plain FIFO-paced copies/flips
+            out.writeInt(0);
+            out.writePad(20);
         }
     }
 
@@ -401,6 +423,9 @@ public class PresentExtension implements Extension,
                 try (XLock lock = client.xServer.lock(XServer.Lockable.WINDOW_MANAGER)) {
                     presentPixmap(client, in, out);
                 }
+                break;
+            case ClientOpcodes.QUERY_CAPABILITIES:
+                queryCapabilities(client, in, out);
                 break;
             case ClientOpcodes.SELECT_INPUT:
                 try (XLock lock = client.xServer.lock(XServer.Lockable.WINDOW_MANAGER)) {

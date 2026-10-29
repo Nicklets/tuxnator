@@ -30,6 +30,23 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
     public static final byte MAJOR_OPCODE = -102;
     private XServer xServer;
     private final SparseArray<DirectContent> directContents = new SparseArray<DirectContent>();
+    // Pixmaps backed by a client dma-buf (Mesa's X11 WSI), keyed by pixmap id
+    private final SparseArray<DmaBufSource> dmaBufSources = new SparseArray<>();
+
+    private static class DmaBufSource {
+        long map;
+        int offset;
+        int stride;
+    }
+
+    static {
+        System.loadLibrary("winlator");
+    }
+
+    private static native boolean nativeIsSocket(int fd);
+    private static native long nativeMapDmaBuf(int fd, int size);
+    private static native void nativeUnmapDmaBuf(long map);
+    private static native void nativeCopyDmaBufToAHB(long map, int srcOffset, int srcStride, short width, short height, long dstAHB, short dstStridePixels);
 
     private class DirectContent {
         Window window;
@@ -45,6 +62,7 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
         private static final byte QUERY_VERSION = 0;
         private static final byte OPEN = 1;
         private static final byte PIXMAP_FROM_BUFFER = 2;
+        private static final byte FENCE_FROM_FD = 4;
         private static final byte GET_SUPPORTED_MODIFIERS = 6;
         private static final byte PIXMAP_FROM_BUFFERS = 7;
     }
@@ -99,10 +117,58 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
             outputStream.writeByte(RESPONSE_CODE_SUCCESS);
             outputStream.writeByte((byte)0);
             outputStream.writeShort(client.getSequenceNumber());
-            outputStream.writeInt(0);
-            outputStream.writeInt(0);
-            outputStream.writeInt(0);
+            // One DRM_FORMAT_MOD_LINEAR (0) for the window and one for the screen: buffers Mesa
+            // allocates for us are then plain linear memory we can read directly
+            outputStream.writeInt(4);
+            outputStream.writeInt(1);
+            outputStream.writeInt(1);
             outputStream.writePad(16);
+            outputStream.writeLong(0);
+            outputStream.writeLong(0);
+        }
+    }
+
+    private void fenceFromFd(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
+        int drawableId = inputStream.readInt();
+        int fenceId = inputStream.readInt();
+        boolean initiallyTriggered = inputStream.readByte() == 1;
+        inputStream.skip(3);
+        int fd = inputStream.getAncillaryFd();
+        SyncExtension sync = client.xServer.getExtension(SyncExtension.MAJOR_OPCODE);
+        sync.createShmFence(fenceId, drawableId, initiallyTriggered, fd);
+    }
+
+    /** Copies a dma-buf backed pixmap's current contents into its drawable before it's used. */
+    public void syncDmaBufPixmap(Pixmap pixmap) {
+        DmaBufSource source;
+        synchronized (dmaBufSources) {
+            source = dmaBufSources.get(pixmap.id);
+        }
+        if (source == null) return;
+        Drawable drawable = pixmap.drawable;
+        nativeCopyDmaBufToAHB(source.map, source.offset, source.stride, drawable.width, drawable.height, drawable.backingAHB, drawable.getStride());
+    }
+
+    private void pixmapFromDmaBuf(XClient client, int pixmapId, short width, short height, byte depth, int stride, int offset, int fd) throws XRequestError {
+        try {
+            Drawable drawable = client.xServer.drawableManager.createDrawable(pixmapId, width, height, depth);
+            if (drawable == null) throw new BadIdChoice(pixmapId);
+            Pixmap pixmap = client.xServer.pixmapManager.createPixmap(drawable);
+            client.registerAsOwnerOfResource(pixmap);
+
+            DmaBufSource source = new DmaBufSource();
+            source.map = nativeMapDmaBuf(fd, offset + stride * height);
+            source.offset = offset;
+            source.stride = stride;
+            if (source.map != 0) {
+                synchronized (dmaBufSources) {
+                    dmaBufSources.put(pixmapId, source);
+                }
+            }
+            else Log.e("Dri3", "Could not map dma-buf for pixmap " + pixmapId);
+        }
+        finally {
+            XConnectorEpoll.closeFd(fd);
         }
     }
 
@@ -139,6 +205,10 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
         if (pixmap != null) throw new BadIdChoice(pixmapId);
 
         int fd = inputStream.getAncillaryFd();
+        if (!nativeIsSocket(fd)) {
+            pixmapFromDmaBuf(client, pixmapId, width, height, depth, stride, 0, fd);
+            return;
+        }
         pixmapFromHardwareBuffer(client, pixmapId, width, height, depth, fd, window);
     }
 
@@ -170,6 +240,10 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
         if (pixmap != null) throw new BadIdChoice(pixmapId);
 
         int fd = inputStream.getAncillaryFd();
+        if (!nativeIsSocket(fd)) {
+            pixmapFromDmaBuf(client, pixmapId, width, height, depth, stride, offset, fd);
+            return;
+        }
         Log.d("Dri3", "Importing buffer as AHardwareBuffer (modifier=" + modifiers + ")");
         pixmapFromHardwareBuffer(client, pixmapId, width, height, depth, fd, window);
     }
@@ -210,6 +284,9 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
                     pixmapFromBuffer(client, inputStream, outputStream);
                 }
                 break;
+            case ClientOpcodes.FENCE_FROM_FD:
+                fenceFromFd(client, inputStream, outputStream);
+                break;
             case ClientOpcodes.GET_SUPPORTED_MODIFIERS:
                 try (XLock lock = client.xServer.lock(XServer.Lockable.WINDOW_MANAGER)) {
                     getSupportedModifiers(client, inputStream, outputStream);
@@ -229,6 +306,13 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
     public void onFreeResource(XResource resource) {
         if (resource instanceof Pixmap) {
             Pixmap pixmap = (Pixmap)resource;
+            synchronized (dmaBufSources) {
+                DmaBufSource source = dmaBufSources.get(pixmap.id);
+                if (source != null) {
+                    nativeUnmapDmaBuf(source.map);
+                    dmaBufSources.remove(pixmap.id);
+                }
+            }
             DirectContent content = directContents.get(pixmap.id);
             if (content != null) {
                 xServer.getXServerView().nativeRemoveDirectContent(content.window.id, pixmap.id);
