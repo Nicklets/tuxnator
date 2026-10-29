@@ -60,6 +60,8 @@ public class MITSHMExtension implements Extension {
             outputStream.writeShort((short)0);
             outputStream.writeShort((short)0);
             outputStream.writeByte((byte)0);
+            // Replies are at least 32 bytes: without the padding, xcb clients (GTK) wait forever
+            outputStream.writePad(15);
         }
     }
 

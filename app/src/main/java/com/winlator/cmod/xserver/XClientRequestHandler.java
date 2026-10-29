@@ -371,6 +371,11 @@ public class XClientRequestHandler implements RequestHandler {
                 case ClientOpcodes.POLY_RECTANGLE:
                     client.skipRequest();
                     break;
+                case ClientOpcodes.CLEAR_AREA:
+                    try (XLock lock = client.xServer.lock(XServer.Lockable.WINDOW_MANAGER, XServer.Lockable.DRAWABLE_MANAGER)) {
+                        DrawRequests.clearArea(client, inputStream, outputStream);
+                    }
+                    break;
                 case ClientOpcodes.POLY_FILL_RECTANGLE:
                     try (XLock lock = client.xServer.lock(XServer.Lockable.DRAWABLE_MANAGER, XServer.Lockable.GRAPHIC_CONTEXT_MANAGER)) {
                         DrawRequests.polyFillRectangle(client, inputStream, outputStream);

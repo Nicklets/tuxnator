@@ -250,6 +250,17 @@ public class Window extends XResource {
         return false;
     }
 
+    /**
+     * Whether a map/configure request on a child goes to the client redirecting SubstructureRedirect
+     * here instead: never for that client's own requests (a window manager mapping its frames).
+     */
+    public boolean isRedirectedFor(int eventId, XClient requester) {
+        for (EventListener eventListener : eventListeners) {
+            if (eventListener.isInterestedIn(eventId) && eventListener.client != requester) return true;
+        }
+        return false;
+    }
+
     public boolean hasEventListenerFor(Bitmask mask) {
         for (EventListener eventListener : eventListeners) {
             if (eventListener.isInterestedIn(mask)) return true;

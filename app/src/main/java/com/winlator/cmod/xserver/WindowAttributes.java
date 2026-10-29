@@ -23,6 +23,8 @@ public class WindowAttributes {
     public enum BitGravity {FORGET, NORTH_WEST, NORTH, NORTH_EAST, WEST, CENTER, EAST, SOUTH_WEST, SOUTH, SOUTH_EAST, STATIC}
     public enum WinGravity {UNMAP, NORTH_WEST, NORTH, NORTH_EAST, WEST, CENTER, EAST, SOUTH_WEST, SOUTH, SOUTH_EAST, STATIC}
     private int backingPixel = 0;
+    // The background pixel, or null for a background pixmap / None (ClearArea then leaves it alone)
+    private Integer backgroundPixel = null;
     private int backingPlanes = 1;
     private BackingStore backingStore = BackingStore.NOT_USEFUL;
     private BitGravity bitGravity = BitGravity.CENTER;
@@ -43,6 +45,10 @@ public class WindowAttributes {
 
     public int getBackingPixel() {
         return backingPixel;
+    }
+
+    public Integer getBackgroundPixel() {
+        return backgroundPixel;
     }
 
     public int getBackingPlanes() {
@@ -114,7 +120,8 @@ public class WindowAttributes {
         for (int index : valueMask) {
             switch (index) {
                 case FLAG_BACKGROUND_PIXEL:
-                    window.getContent().fillColor(inputStream.readInt());
+                    backgroundPixel = inputStream.readInt();
+                    if (window.getContent() != null) window.getContent().fillColor(backgroundPixel);
                     break;
                 case FLAG_BACKING_PIXEL:
                     backingPixel = inputStream.readInt();
@@ -147,6 +154,9 @@ public class WindowAttributes {
                     cursor = client.xServer.cursorManager.getCursor(inputStream.readInt());
                     break;
                 case FLAG_BACKGROUND_PIXMAP:
+                    backgroundPixel = null;
+                    inputStream.skip(4);
+                    break;
                 case FLAG_BORDER_PIXMAP:
                 case FLAG_BORDER_PIXEL:
                 case FLAG_COLORMAP:

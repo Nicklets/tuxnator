@@ -7,8 +7,12 @@ import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
 import com.winlator.cmod.xserver.Drawable;
 import com.winlator.cmod.xserver.GraphicsContext;
+import com.winlator.cmod.xserver.Window;
 import com.winlator.cmod.xserver.XClient;
 import com.winlator.cmod.xserver.errors.BadDrawable;
+import com.winlator.cmod.xserver.errors.BadWindow;
+import com.winlator.cmod.xserver.events.Event;
+import com.winlator.cmod.xserver.events.Expose;
 import com.winlator.cmod.xserver.errors.BadGraphicsContext;
 import com.winlator.cmod.xserver.errors.BadMatch;
 import com.winlator.cmod.xserver.errors.XRequestError;
@@ -164,8 +168,31 @@ public abstract class DrawRequests {
             short y = inputStream.readShort();
             short width = inputStream.readShort();
             short height = inputStream.readShort();
-            drawable.fillRect(x, y, width, height, graphicsContext.getBackground());
+            drawable.fillRect(x, y, width, height, graphicsContext.getForeground());
             length -= 8;
         }
+    }
+
+    public static void clearArea(XClient client, XInputStream inputStream, XOutputStream outputStream) throws XRequestError {
+        boolean exposures = client.getRequestData() != 0;
+        int windowId = inputStream.readInt();
+        short x = inputStream.readShort();
+        short y = inputStream.readShort();
+        int width = inputStream.readUnsignedShort();
+        int height = inputStream.readUnsignedShort();
+
+        Window window = client.xServer.windowManager.getWindow(windowId);
+        if (window == null) throw new BadWindow(windowId);
+        Drawable content = window.getContent();
+        if (content == null) throw new BadMatch(); // InputOnly
+
+        // A zero width/height means up to the window's edge
+        if (width == 0) width = content.width - x;
+        if (height == 0) height = content.height - y;
+        Integer background = window.attributes.getBackgroundPixel();
+        if (background != null && width > 0 && height > 0) {
+            content.fillRect(x, y, width, height, background);
+        }
+        if (exposures) window.sendEvent(Event.EXPOSURE, new Expose(window));
     }
 }

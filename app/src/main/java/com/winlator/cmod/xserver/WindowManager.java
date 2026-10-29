@@ -5,6 +5,7 @@ import android.util.SparseArray;
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xserver.errors.BadIdChoice;
 import com.winlator.cmod.xserver.errors.BadMatch;
+import com.winlator.cmod.xserver.errors.BadValue;
 import com.winlator.cmod.xserver.errors.XRequestError;
 import com.winlator.cmod.xserver.events.ConfigureNotify;
 import com.winlator.cmod.xserver.events.ConfigureRequest;
@@ -115,9 +116,14 @@ public class WindowManager extends XResourceManager {
     }
 
     public void mapWindow(Window window) {
+        mapWindow(window, null);
+    }
+
+    /** @param requester the client asking for it, or null when the server maps it */
+    public void mapWindow(Window window, XClient requester) {
         if (!window.attributes.isMapped()) {
             Window parent = window.getParent();
-            if (!parent.hasEventListenerFor(Event.SUBSTRUCTURE_REDIRECT) || window.attributes.isOverrideRedirect()) {
+            if (!parent.isRedirectedFor(Event.SUBSTRUCTURE_REDIRECT, requester) || window.attributes.isOverrideRedirect()) {
                 window.attributes.setMapped(true);
                 window.sendEvent(Event.STRUCTURE_NOTIFY, new MapNotify(window, window));
                 parent.sendEvent(Event.SUBSTRUCTURE_NOTIFY, new MapNotify(parent, window));
@@ -265,7 +271,7 @@ public class WindowManager extends XResourceManager {
         triggerOnChangeWindowZOrder(window);
     }
 
-    public void configureWindow(Window window, Bitmask valueMask, XInputStream inputStream) {
+    public void configureWindow(Window window, Bitmask valueMask, XInputStream inputStream, XClient requester) throws XRequestError {
         short x = window.getX();
         short y = window.getY();
         short width = window.getWidth();
@@ -300,9 +306,14 @@ public class WindowManager extends XResourceManager {
             }
         }
 
+        // A zero size is a BadValue (window managers send them while setting up frames); the
+        // content drawable can't be allocated with it
+        if (width <= 0) throw new BadValue(width);
+        if (height <= 0) throw new BadValue(height);
+
         Window parent = window.getParent();
         boolean overrideRedirect = window.attributes.isOverrideRedirect();
-        if (!parent.hasEventListenerFor(Event.SUBSTRUCTURE_REDIRECT) || overrideRedirect) {
+        if (!parent.isRedirectedFor(Event.SUBSTRUCTURE_REDIRECT, requester) || overrideRedirect) {
             changeWindowGeometry(window, x, y, width, height);
 
             window.setBorderWidth(borderWidth);

@@ -45,6 +45,8 @@ public abstract class WindowRequests {
         short width = inputStream.readShort();
         short height = inputStream.readShort();
         short borderWidth = inputStream.readShort();
+        if (width <= 0) throw new BadValue(width);
+        if (height <= 0) throw new BadValue(height);
         WindowAttributes.WindowClass windowClass = WindowAttributes.WindowClass.values()[(byte)inputStream.readShort()];
         Visual visual = client.xServer.pixmapManager.getVisual(inputStream.readInt());
         Bitmask valueMask = new Bitmask(inputStream.readInt());
@@ -134,24 +136,16 @@ public abstract class WindowRequests {
         int windowId = inputStream.readInt();
         Window window = client.xServer.windowManager.getWindow(windowId);
         if (window == null) throw new BadWindow(windowId);
-        client.xServer.windowManager.mapWindow(window);
+        client.xServer.windowManager.mapWindow(window, client);
     }
 
+    // Maps the window's unmapped children, not the window itself nor deeper descendants
     public static void mapSubWindows(XClient client, XInputStream inputStream, XOutputStream outputStream) throws XRequestError {
         int windowId = inputStream.readInt();
         Window window = client.xServer.windowManager.getWindow(windowId);
         if (window == null) throw new BadWindow(windowId);
-        for (Window child : window.getChildren())
-            mapSubWindows(client, child.id);
-        client.xServer.windowManager.mapWindow(window);
-    }
-
-    private static void mapSubWindows(XClient client, int windowId) throws XRequestError {
-        Window window = client.xServer.windowManager.getWindow(windowId);
-        if (window == null) throw new BadWindow(windowId);
-        for (Window child : window.getChildren())
-            mapSubWindows(client, child.id);
-        client.xServer.windowManager.mapWindow(window);
+        for (Window child : new java.util.ArrayList<>(window.getChildren()))
+            client.xServer.windowManager.mapWindow(child, client);
     }
 
     public static void unmapWindow(XClient client, XInputStream inputStream, XOutputStream outputStream) throws XRequestError {
@@ -232,8 +226,11 @@ public abstract class WindowRequests {
             }
             else {
                 byte[] data = property.data.array();
-                int offset = longOffset * 4;
-                int length = Math.min(data.length - offset, longLength * 4);
+                // Both are CARD32: clients ask for 0xffffffff long words to mean "all of it"
+                long offset64 = (longOffset & 0xffffffffL) * 4;
+                if (offset64 > data.length) throw new BadValue(longOffset);
+                int offset = (int)offset64;
+                int length = (int)Math.min(data.length - offset, (longLength & 0xffffffffL) * 4);
                 if (length < 0) throw new BadValue(longOffset);
                 bytesAfter = data.length - (offset + length);
 
@@ -381,28 +378,29 @@ public abstract class WindowRequests {
         if (window == null) throw new BadWindow(windowId);
         Bitmask valueMask = new Bitmask(inputStream.readShort());
         inputStream.skip(2);
-        if (!valueMask.isEmpty()) client.xServer.windowManager.configureWindow(window, valueMask, inputStream);
+        if (!valueMask.isEmpty()) client.xServer.windowManager.configureWindow(window, valueMask, inputStream, client);
     }
 
     public static void getGeometry(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
         int drawableId = inputStream.readInt();
         Drawable drawable =  client.xServer.drawableManager.getDrawable(drawableId);
-        if (drawable == null) throw new BadDrawable(drawableId);
         Window window = client.xServer.windowManager.getWindow(drawableId);
+        // InputOnly windows have no content drawable, but they are still valid here (depth 0)
+        if (drawable == null && window == null) throw new BadDrawable(drawableId);
         short x = window != null ? window.getX() : 0;
         short y = window != null ? window.getY() : 0;
         short borderWidth = window != null ? window.getBorderWidth() : 0;
 
         try (XStreamLock lock = outputStream.lock()) {
             outputStream.writeByte(RESPONSE_CODE_SUCCESS);
-            outputStream.writeByte(drawable.visual.depth);
+            outputStream.writeByte(drawable != null ? drawable.visual.depth : 0);
             outputStream.writeShort(client.getSequenceNumber());
             outputStream.writeInt(0);
             outputStream.writeInt(client.xServer.windowManager.rootWindow.id);
             outputStream.writeShort(x);
             outputStream.writeShort(y);
-            outputStream.writeShort(drawable.width);
-            outputStream.writeShort(drawable.height);
+            outputStream.writeShort(drawable != null ? drawable.width : window.getWidth());
+            outputStream.writeShort(drawable != null ? drawable.height : window.getHeight());
             outputStream.writeShort(borderWidth);
             outputStream.writePad(10);
         }
