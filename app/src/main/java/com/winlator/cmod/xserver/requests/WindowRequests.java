@@ -348,19 +348,18 @@ public abstract class WindowRequests {
         int windowId = inputStream.readInt();
         inputStream.skip(4);
 
-        switch (focusRevertTo) {
-            case NONE:
-                client.xServer.windowManager.setFocus(null, focusRevertTo);
-                break;
-            case POINTER_ROOT:
-                client.xServer.windowManager.setFocus(client.xServer.windowManager.rootWindow, focusRevertTo);
-                break;
-            case PARENT:
-                Window window = client.xServer.windowManager.getWindow(windowId);
-                if (window == null) throw new BadWindow(windowId);
-                client.xServer.windowManager.setFocus(window, focusRevertTo);
-                break;
+        // The focus is the window argument (0 = None, 1 = PointerRoot); revert-to only says what happens
+        // when that window goes away. Switching on revert-to turned SDL2's
+        // SetInputFocus(revert-to=None, focus=window) into "no focus", and every key was dropped.
+        WindowManager windowManager = client.xServer.windowManager;
+        Window focus;
+        if (windowId == 0) focus = null;
+        else if (windowId == 1) focus = windowManager.rootWindow;
+        else {
+            focus = windowManager.getWindow(windowId);
+            if (focus == null) throw new BadWindow(windowId);
         }
+        windowManager.setFocus(focus, focusRevertTo);
     }
 
     public static void getInputFocus(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {

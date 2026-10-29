@@ -9,6 +9,7 @@ import com.winlator.cmod.xserver.errors.XRequestError;
 import com.winlator.cmod.xserver.events.ConfigureNotify;
 import com.winlator.cmod.xserver.events.ConfigureRequest;
 import com.winlator.cmod.xserver.events.DestroyNotify;
+import com.winlator.cmod.xserver.events.FocusChange;
 import com.winlator.cmod.xserver.events.Event;
 import com.winlator.cmod.xserver.events.Expose;
 import com.winlator.cmod.xserver.events.MapNotify;
@@ -161,8 +162,19 @@ public class WindowManager extends XResourceManager {
     }
 
     public void setFocus(Window focusedWindow, FocusRevertTo focusRevertTo) {
+        Window previous = this.focusedWindow;
         this.focusedWindow = focusedWindow;
         this.focusRevertTo = focusRevertTo;
+
+        // Simplified focus events (no virtual crossing events): enough for clients like SDL2 that
+        // only track whether their own window has the keyboard focus
+        if (previous == focusedWindow) return;
+        if (previous != null && previous != rootWindow) {
+            previous.sendEvent(Event.FOCUS_CHANGE, new FocusChange(false, previous, FocusChange.NOTIFY_NONLINEAR));
+        }
+        if (focusedWindow != null && focusedWindow != rootWindow) {
+            focusedWindow.sendEvent(Event.FOCUS_CHANGE, new FocusChange(true, focusedWindow, FocusChange.NOTIFY_NONLINEAR));
+        }
     }
 
     public FocusRevertTo getFocusRevertTo() {
