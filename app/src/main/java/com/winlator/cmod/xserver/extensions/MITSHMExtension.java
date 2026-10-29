@@ -14,6 +14,8 @@ import com.winlator.cmod.xserver.errors.BadDrawable;
 import com.winlator.cmod.xserver.errors.BadGraphicsContext;
 import com.winlator.cmod.xserver.errors.BadImplementation;
 import com.winlator.cmod.xserver.errors.BadSHMSegment;
+import com.winlator.cmod.xserver.errors.BadValue;
+import com.winlator.cmod.xserver.requests.DrawRequests;
 import com.winlator.cmod.xserver.errors.XRequestError;
 
 import java.io.IOException;
@@ -27,6 +29,7 @@ public class MITSHMExtension implements Extension {
         private static final byte ATTACH = 1;
         private static final byte DETACH = 2;
         private static final byte PUT_IMAGE = 3;
+        private static final byte GET_IMAGE = 4;
     }
 
     @Override
@@ -88,9 +91,11 @@ public class MITSHMExtension implements Extension {
         short dstX = inputStream.readShort();
         short dstY = inputStream.readShort();
         byte depth = inputStream.readByte();
-        inputStream.skip(3);
+        inputStream.skip(1); // format
+        boolean sendEvent = inputStream.readByte() != 0;
+        inputStream.skip(1);
         int shmseg = inputStream.readInt();
-        inputStream.skip(4);
+        int offset = inputStream.readInt();
 
         Drawable drawable = client.xServer.drawableManager.getDrawable(drawableId);
         if (drawable == null) throw new BadDrawable(drawableId);
@@ -105,7 +110,69 @@ public class MITSHMExtension implements Extension {
             throw new UnsupportedOperationException("GC Function other than COPY is not supported.");
         }
 
-        drawable.drawImage(srcX, srcY, dstX, dstY, srcWidth, srcHeight, depth, data, totalWidth, totalHeight);
+        // The image starts at offset in the segment (cairo packs several images in one)
+        drawable.drawImage(srcX, srcY, dstX, dstY, srcWidth, srcHeight, depth, slice(data, offset), totalWidth, totalHeight);
+        if (sendEvent) sendCompletion(client, drawableId, PUT_IMAGE_MINOR, shmseg, offset);
+    }
+
+    private static final short PUT_IMAGE_MINOR = ClientOpcodes.PUT_IMAGE;
+
+    private static ByteBuffer slice(ByteBuffer data, int offset) {
+        ByteBuffer view = data.duplicate();
+        view.position(offset);
+        return view.slice().order(data.order());
+    }
+
+    /** ShmCompletion, which clients wait for before reusing the segment */
+    private static void sendCompletion(XClient client, int drawableId, short minorOpcode, int shmseg, int offset) throws IOException {
+        XOutputStream outputStream = client.getOutputStream();
+        try (XStreamLock lock = outputStream.lock()) {
+            outputStream.writeByte((byte)64);
+            outputStream.writeByte((byte)0);
+            outputStream.writeShort(client.getSequenceNumber());
+            outputStream.writeInt(drawableId);
+            outputStream.writeShort(minorOpcode);
+            outputStream.writeByte(MAJOR_OPCODE);
+            outputStream.writeByte((byte)0);
+            outputStream.writeInt(shmseg);
+            outputStream.writeInt(offset);
+            outputStream.writePad(12);
+        }
+    }
+
+    private static void getImage(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
+        int drawableId = inputStream.readInt();
+        short x = inputStream.readShort();
+        short y = inputStream.readShort();
+        short width = inputStream.readShort();
+        short height = inputStream.readShort();
+        inputStream.skip(4); // plane mask
+        inputStream.skip(4); // format and padding
+        int shmseg = inputStream.readInt();
+        int offset = inputStream.readInt();
+
+        Drawable drawable = client.xServer.drawableManager.getDrawable(drawableId);
+        if (drawable == null) throw new BadDrawable(drawableId);
+        ByteBuffer segment = client.xServer.getSHMSegmentManager().getData(shmseg);
+        if (segment == null) throw new BadSHMSegment(shmseg);
+
+        boolean isWindow = client.xServer.pixmapManager.getPixmap(drawableId) == null;
+        ByteBuffer image = drawable.getImage(x, y, width, height);
+        if (isWindow) DrawRequests.makeOpaque(image);
+        int size = image.limit();
+        ByteBuffer dst = slice(segment, offset);
+        if (size > dst.capacity()) throw new BadValue(size);
+        dst.put(image);
+
+        try (XStreamLock lock = outputStream.lock()) {
+            outputStream.writeByte(RESPONSE_CODE_SUCCESS);
+            outputStream.writeByte(drawable.visual.depth);
+            outputStream.writeShort(client.getSequenceNumber());
+            outputStream.writeInt(0);
+            outputStream.writeInt(isWindow ? drawable.visual.id : 0);
+            outputStream.writeInt(size);
+            outputStream.writePad(16);
+        }
     }
 
     @Override
@@ -128,6 +195,11 @@ public class MITSHMExtension implements Extension {
             case ClientOpcodes.PUT_IMAGE :
                 try (XLock lock = client.xServer.lock(XServer.Lockable.SHMSEGMENT_MANAGER, XServer.Lockable.DRAWABLE_MANAGER, XServer.Lockable.GRAPHIC_CONTEXT_MANAGER)) {
                     putImage(client, inputStream, outputStream);
+                }
+                break;
+            case ClientOpcodes.GET_IMAGE :
+                try (XLock lock = client.xServer.lock(XServer.Lockable.SHMSEGMENT_MANAGER, XServer.Lockable.DRAWABLE_MANAGER)) {
+                    getImage(client, inputStream, outputStream);
                 }
                 break;
             default:

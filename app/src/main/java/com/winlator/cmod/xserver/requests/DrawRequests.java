@@ -81,8 +81,10 @@ public abstract class DrawRequests {
 
         Drawable drawable =  client.xServer.drawableManager.getDrawable(drawableId);
         if (drawable == null) throw new BadDrawable(drawableId);
-        int visualId = client.xServer.pixmapManager.getPixmap(drawableId) == null ? drawable.visual.id : 0;
+        boolean isWindow = client.xServer.pixmapManager.getPixmap(drawableId) == null;
+        int visualId = isWindow ? drawable.visual.id : 0;
         ByteBuffer data = drawable.getImage(x, y, width, height);
+        if (isWindow) makeOpaque(data);
         int length = data.limit();
 
         try (XStreamLock lock = outputStream.lock()) {
@@ -95,6 +97,15 @@ public abstract class DrawRequests {
             outputStream.write(data);
             if ((-length & 3) > 0) outputStream.writePad(-length & 3);
         }
+    }
+
+    /**
+     * Windows are opaque on screen, but the default visual is 32 bits deep and their content keeps
+     * whatever alpha was written (often 0). Clients reading a window back to composite onto it
+     * (cairo without RENDER) take that as premultiplied alpha and write black: report it opaque.
+     */
+    public static void makeOpaque(ByteBuffer bgra) {
+        for (int i = 3, n = bgra.limit(); i < n; i += 4) bgra.put(i, (byte)0xff);
     }
 
     public static void copyArea(XClient client, XInputStream inputStream, XOutputStream outputStream) throws XRequestError {
@@ -189,10 +200,7 @@ public abstract class DrawRequests {
         // A zero width/height means up to the window's edge
         if (width == 0) width = content.width - x;
         if (height == 0) height = content.height - y;
-        Integer background = window.attributes.getBackgroundPixel();
-        if (background != null && width > 0 && height > 0) {
-            content.fillRect(x, y, width, height, background);
-        }
+        if (width > 0 && height > 0) window.attributes.paintBackground(content, x, y, width, height);
         if (exposures) window.sendEvent(Event.EXPOSURE, new Expose(window));
     }
 }

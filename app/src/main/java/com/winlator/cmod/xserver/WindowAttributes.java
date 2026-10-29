@@ -25,6 +25,8 @@ public class WindowAttributes {
     private int backingPixel = 0;
     // The background pixel, or null for a background pixmap / None (ClearArea then leaves it alone)
     private Integer backgroundPixel = null;
+    // Private copy of the background pixmap: X keeps it after the client frees its pixmap
+    private Drawable backgroundPixmap = null;
     private int backingPlanes = 1;
     private BackingStore backingStore = BackingStore.NOT_USEFUL;
     private BitGravity bitGravity = BitGravity.CENTER;
@@ -49,6 +51,31 @@ public class WindowAttributes {
 
     public Integer getBackgroundPixel() {
         return backgroundPixel;
+    }
+
+    public void releaseBackgroundPixmap() {
+        if (backgroundPixmap != null) backgroundPixmap.destroy();
+        backgroundPixmap = null;
+    }
+
+    /** Paints the window background (pixel, or pixmap tiled from the window origin) into a region. */
+    public void paintBackground(Drawable content, int x, int y, int width, int height) {
+        if (backgroundPixel != null) {
+            content.fillRect(x, y, width, height, backgroundPixel);
+        }
+        else if (backgroundPixmap != null) {
+            int tw = backgroundPixmap.width, th = backgroundPixmap.height;
+            for (int ty = (y / th) * th; ty < y + height; ty += th) {
+                for (int tx = (x / tw) * tw; tx < x + width; tx += tw) {
+                    int sx = Math.max(x - tx, 0), sy = Math.max(y - ty, 0);
+                    int w = Math.min(tw - sx, x + width - (tx + sx));
+                    int h = Math.min(th - sy, y + height - (ty + sy));
+                    if (w > 0 && h > 0) {
+                        content.copyArea((short)sx, (short)sy, (short)(tx + sx), (short)(ty + sy), (short)w, (short)h, backgroundPixmap);
+                    }
+                }
+            }
+        }
     }
 
     public int getBackingPlanes() {
@@ -120,6 +147,7 @@ public class WindowAttributes {
         for (int index : valueMask) {
             switch (index) {
                 case FLAG_BACKGROUND_PIXEL:
+                    releaseBackgroundPixmap();
                     backgroundPixel = inputStream.readInt();
                     if (window.getContent() != null) window.getContent().fillColor(backgroundPixel);
                     break;
@@ -153,10 +181,19 @@ public class WindowAttributes {
                 case FLAG_CURSOR:
                     cursor = client.xServer.cursorManager.getCursor(inputStream.readInt());
                     break;
-                case FLAG_BACKGROUND_PIXMAP:
+                case FLAG_BACKGROUND_PIXMAP: {
+                    int pixmapId = inputStream.readInt();
+                    releaseBackgroundPixmap();
                     backgroundPixel = null;
-                    inputStream.skip(4);
+                    // 0 is None and 1 ParentRelative: both leave the background as it is here
+                    Pixmap pixmap = pixmapId > 1 ? client.xServer.pixmapManager.getPixmap(pixmapId) : null;
+                    if (pixmap != null) {
+                        Drawable source = pixmap.drawable;
+                        backgroundPixmap = client.xServer.drawableManager.createDrawable(0, source.width, source.height, source.visual);
+                        backgroundPixmap.copyArea((short)0, (short)0, (short)0, (short)0, source.width, source.height, source);
+                    }
                     break;
+                }
                 case FLAG_BORDER_PIXMAP:
                 case FLAG_BORDER_PIXEL:
                 case FLAG_COLORMAP:
