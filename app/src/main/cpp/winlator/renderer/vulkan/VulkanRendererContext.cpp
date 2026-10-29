@@ -243,13 +243,15 @@ void VulkanRendererContext::createLogicalDevice() {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME
     };
-    // Lets DRI3 clients' dma-bufs be read by the GPU directly (updateWindowContentDmaBuf)
-    dmaBufImportSupported = hasMemoryFd && hasDmaBuf;
-    if (dmaBufImportSupported) {
-        extList.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
-        extList.push_back(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
-    }
-    RLOG("createLogicalDevice: dma-buf import %s", dmaBufImportSupported ? "supported" : "unavailable");
+    // Lets DRI3 clients' dma-bufs be read by the GPU directly (updateWindowContentDmaBuf). Qualcomm's
+    // driver has no VK_EXT_external_memory_dma_buf, but its opaque fds are dma-bufs, so fall back to
+    // importing as OPAQUE_FD; a failed import makes the X server copy on the CPU instead.
+    dmaBufImportSupported = hasMemoryFd;
+    dmaBufHandleType = hasDmaBuf ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
+                                 : VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+    if (hasMemoryFd) extList.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+    if (hasDmaBuf) extList.push_back(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
+    RLOG("createLogicalDevice: external_memory_fd=%d external_memory_dma_buf=%d", hasMemoryFd, hasDmaBuf);
     VkDeviceCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     ci.pQueueCreateInfos=&qi; ci.queueCreateInfoCount=1;
     ci.enabledExtensionCount=(uint32_t)extList.size(); ci.ppEnabledExtensionNames=extList.data();
@@ -1320,19 +1322,25 @@ void VulkanRendererContext::updateWindowContentAHB(int64_t id, AHardwareBuffer* 
  * touches the pixels. A buffer rather than a linear image because the client's stride rarely
  * matches this driver's linear image pitch. */
 bool VulkanRendererContext::importDmaBufToWinTex(WinTex& wt, int fd, int w, int h, int stride) {
-    if (!dmaBufImportSupported || !vk_.GetMemoryFdPropertiesKHR) return false;
+    if (!dmaBufImportSupported) return false;
     if (stride < w*4 || stride % 4 != 0) return false;
+    off_t dmaBufSize=lseek(fd,0,SEEK_END);
+    if (dmaBufSize < (off_t)stride*h) return false;
 
+    // Only dma-buf handles can be queried; opaque fds take any type the buffer allows
     VkMemoryFdPropertiesKHR fdProps{};
     fdProps.sType=VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR;
-    if (vk_.GetMemoryFdPropertiesKHR(device,VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,fd,&fdProps)!=VK_SUCCESS) {
+    fdProps.memoryTypeBits=~0u;
+    if (dmaBufHandleType==VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT &&
+        (!vk_.GetMemoryFdPropertiesKHR ||
+         vk_.GetMemoryFdPropertiesKHR(device,dmaBufHandleType,fd,&fdProps)!=VK_SUCCESS)) {
         RLOG_E("importDmaBufToWinTex: vkGetMemoryFdPropertiesKHR failed");
         return false;
     }
 
     VkExternalMemoryBufferCreateInfo ebi{};
     ebi.sType=VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
-    ebi.handleTypes=VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+    ebi.handleTypes=dmaBufHandleType;
     VkBufferCreateInfo bi{};
     bi.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO; bi.pNext=&ebi;
     bi.size=(VkDeviceSize)stride*h; bi.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -1342,9 +1350,11 @@ bool VulkanRendererContext::importDmaBufToWinTex(WinTex& wt, int fd, int w, int 
 
     VkMemoryRequirements req; vk_.GetBufferMemoryRequirements(device,buf,&req);
     uint32_t bits=req.memoryTypeBits & fdProps.memoryTypeBits;
-    if (!bits) {
-        RLOG_E("importDmaBufToWinTex: no compatible memory type (buffer 0x%x, dma-buf 0x%x)",
-            req.memoryTypeBits, fdProps.memoryTypeBits);
+    // Adreno pads buffer requirements past the data (~5 KB) and the client's dma-buf has no room
+    // for that; the copies only ever read the rows themselves, which must fit
+    if (!bits || (off_t)stride*(h-1) + w*4 > dmaBufSize) {
+        RLOG_E("importDmaBufToWinTex: incompatible dma-buf (types 0x%x/0x%x, size %" PRIu64 "/%" PRId64 ")",
+            req.memoryTypeBits, fdProps.memoryTypeBits, (uint64_t)req.size, (int64_t)dmaBufSize);
         vk_.DestroyBuffer(device,buf,nullptr);
         return false;
     }
@@ -1354,15 +1364,18 @@ bool VulkanRendererContext::importDmaBufToWinTex(WinTex& wt, int fd, int w, int 
     if (importFd<0) { vk_.DestroyBuffer(device,buf,nullptr); return false; }
     VkImportMemoryFdInfoKHR imp{};
     imp.sType=VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR;
-    imp.handleType=VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT; imp.fd=importFd;
+    imp.handleType=dmaBufHandleType; imp.fd=importFd;
     VkMemoryDedicatedAllocateInfo ded{};
     ded.sType=VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO; ded.pNext=&imp; ded.buffer=buf;
     VkMemoryAllocateInfo ai{};
     ai.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO; ai.pNext=&ded;
-    ai.allocationSize=req.size; ai.memoryTypeIndex=(uint32_t)__builtin_ctz(bits);
+    // Opaque fd imports must use the exported allocation's own size
+    ai.allocationSize=(VkDeviceSize)dmaBufSize; ai.memoryTypeIndex=(uint32_t)__builtin_ctz(bits);
     VkDeviceMemory mem=VK_NULL_HANDLE;
-    if (vk_.AllocateMemory(device,&ai,nullptr,&mem)!=VK_SUCCESS) {
-        RLOG_E("importDmaBufToWinTex: dma-buf import failed (size=%" PRIu64 ")", (uint64_t)req.size);
+    VkResult allocRes=vk_.AllocateMemory(device,&ai,nullptr,&mem);
+    if (allocRes!=VK_SUCCESS) {
+        RLOG_E("importDmaBufToWinTex: import as handle type 0x%x failed (%d, size=%" PRId64 ")",
+            (unsigned)dmaBufHandleType, (int)allocRes, (int64_t)dmaBufSize);
         close(importFd);
         vk_.DestroyBuffer(device,buf,nullptr);
         return false;

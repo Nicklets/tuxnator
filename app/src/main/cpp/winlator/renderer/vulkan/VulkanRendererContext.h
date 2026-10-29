@@ -301,6 +301,7 @@ public:
     // Client dma-bufs (DRI3 pixmaps) keyed by the pixmap's drawable id
     std::unordered_map<int64_t, WinTex>                        dmaBufImportCache;
     bool dmaBufImportSupported = false;
+    VkExternalMemoryHandleTypeFlagBits dmaBufHandleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
 
     std::vector<WinTex>    deleteQueue;
     std::vector<RenderEntry> renderList;

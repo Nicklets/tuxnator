@@ -157,6 +157,7 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
     for (auto& d : draws) {
         if (d.isAHB || d.upload == VK_NULL_HANDLE || d.img == VK_NULL_HANDLE) continue;
         VkBufferImageCopy r{};
+        r.bufferRowLength = d.rowLength;
         r.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         r.imageExtent = {(uint32_t)d.w, (uint32_t)d.h, 1};
         vk_.CmdCopyBufferToImage(cb, d.upload, d.img,
