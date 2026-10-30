@@ -6,6 +6,7 @@ import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xserver.events.Event;
 import com.winlator.cmod.xserver.extensions.GLXExtension;
+import com.winlator.cmod.xserver.extensions.SyncExtension;
 import com.winlator.cmod.xserver.extensions.XCompositeExtension;
 import com.winlator.cmod.xserver.extensions.XInput2Extension;
 
@@ -108,6 +109,9 @@ public class XClient implements XResourceManager.OnResourceLifecycleListener {
             XCompositeExtension composite =
                     xServer.getExtension(XCompositeExtension.MAJOR_OPCODE);
             if (composite != null) composite.freeClientResources(this);
+
+            SyncExtension sync = xServer.getExtension(SyncExtension.MAJOR_OPCODE);
+            if (sync != null) sync.freeClientResources(this);
 
             XInput2Extension xInput2 = xServer.getExtension(XInput2Extension.MAJOR_OPCODE);
             if (xInput2 != null) xInput2.onClientDisconnected(this);

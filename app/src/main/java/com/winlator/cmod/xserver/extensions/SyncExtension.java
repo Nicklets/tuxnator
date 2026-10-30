@@ -303,6 +303,24 @@ public class SyncExtension implements Extension, XResourceManager.OnResourceLife
         }
     }
 
+    /**
+     * Drops the counters and fences of a disconnecting client. Its resource ID range goes to the
+     * next client, which would otherwise get BadIDChoice creating them again (GTK aborts on it).
+     */
+    public void freeClientResources(XClient client) {
+        synchronized (counterLock) {
+            counters.keySet().removeIf(client::isValidResourceId);
+        }
+        synchronized (fenceLock) {
+            for (int i = fences.size() - 1; i >= 0; i--) {
+                if (client.isValidResourceId(fences.keyAt(i))) {
+                    destroy(fences.valueAt(i));
+                    fences.removeAt(i);
+                }
+            }
+        }
+    }
+
     @Override
     public void onFreeResource(XResource resource) {
         synchronized (fenceLock) {

@@ -54,6 +54,8 @@ public abstract class WindowRequests {
         Window window = client.xServer.windowManager.createWindow(windowId, parent, x, y, width, height, windowClass, visual, depth, client);
         window.setBorderWidth(borderWidth);
         if (!valueMask.isEmpty()) window.attributes.update(valueMask, inputStream, client);
+        Drawable content = window.getContent();
+        if (content != null) window.attributes.paintBackground(content, 0, 0, content.width, content.height);
         client.setEventListenerForWindow(window, window.attributes.getEventMask());
         client.registerAsOwnerOfResource(window);
         parent.sendEvent(Event.SUBSTRUCTURE_NOTIFY, new CreateNotify(parent, window));

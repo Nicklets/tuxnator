@@ -148,8 +148,10 @@ public class WindowAttributes {
             switch (index) {
                 case FLAG_BACKGROUND_PIXEL:
                     releaseBackgroundPixmap();
+                    // Only stored: X never repaints a window when its background changes (GTK
+                    // switches backgrounds around redraws, which used to wipe PCManFM's desktop
+                    // icons). The new window gets it painted in CreateWindow.
                     backgroundPixel = inputStream.readInt();
-                    if (window.getContent() != null) window.getContent().fillColor(backgroundPixel);
                     break;
                 case FLAG_BACKING_PIXEL:
                     backingPixel = inputStream.readInt();
