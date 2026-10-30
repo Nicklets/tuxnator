@@ -14,6 +14,10 @@ public class SelectionManager implements XResourceManager.OnResourceLifecycleLis
     public static class Selection {
         public Window owner;
         private XClient client;
+
+        public XClient getClient() {
+            return client;
+        }
     }
 
     public void setSelection(int atom, Window owner, XClient client, int timestamp) {
