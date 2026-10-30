@@ -4,7 +4,8 @@
  * A Linux desktop would rely on binfmt_misc to start an x86_64 binary that a file manager, a
  * launcher or a script executes, but PRoot can't offer it. So execve() and the functions that
  * end in it without going through the exported symbol (execvp*, posix_spawn*) look at the ELF
- * header first and run "box64 <program> <args>" for x86 executables. Everything else is passed
+ * header first and run "box64 <program> <args>" for x86 executables. AppImages go to
+ * tuxnator-run-appimage instead, since their runtime needs FUSE. Everything else is passed
  * through untouched. Box64 runs fine with this preloaded: the programs it starts are already
  * prefixed with box64 when they reach here.
  */
@@ -21,18 +22,24 @@
 
 #define EXPORT __attribute__((visibility("default")))
 #define BOX64 "/usr/local/bin/box64"
+#define APPIMAGE_RUNNER "/usr/local/bin/tuxnator-run-appimage"
 
 extern char **environ;
 
-static int is_x86_elf(const char *path) {
+enum { NATIVE, X86, APPIMAGE };
+
+static int classify(const char *path) {
     int fd = open(path, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return 0;
+    if (fd < 0) return NATIVE;
     Elf64_Ehdr header;
     ssize_t n = read(fd, &header, sizeof(header));
     close(fd);
-    if (n < (ssize_t)(EI_NIDENT + 4) || memcmp(header.e_ident, ELFMAG, SELFMAG) != 0) return 0;
+    if (n < (ssize_t)(EI_NIDENT + 4) || memcmp(header.e_ident, ELFMAG, SELFMAG) != 0) return NATIVE;
+    // AppImages mark their runtime with "AI" and the format type in the ELF padding
+    if (header.e_ident[8] == 'A' && header.e_ident[9] == 'I' && (header.e_ident[10] == 1 || header.e_ident[10] == 2))
+        return APPIMAGE;
     // e_machine sits at the same offset in 32-bit headers
-    return header.e_machine == EM_X86_64 || header.e_machine == EM_386;
+    return header.e_machine == EM_X86_64 || header.e_machine == EM_386 ? X86 : NATIVE;
 }
 
 /* Resolves a name like execvp() does; returns 0 and fills out with the path, or -1 */
@@ -59,17 +66,25 @@ static int resolve(const char *file, char *out, size_t size) {
     return -1;
 }
 
-/* argv for "box64 path args...", or NULL when path isn't an x86 program (caller frees it) */
-static char **box64_argv(const char *path, char *const argv[]) {
-    if (!is_x86_elf(path)) return NULL;
+/* argv for "box64 path args..." or "/bin/sh tuxnator-run-appimage path args...", or NULL when path
+ * runs as is; args[0] is the program to execute (caller frees it) */
+static char **rewrite_argv(const char *path, char *const argv[]) {
+    int kind = classify(path);
+    if (kind == NATIVE) return NULL;
     size_t argc = 0;
     while (argv && argv[argc]) argc++;
-    char **args = malloc((argc + 2) * sizeof(char *));
+    char **args = malloc((argc + 3) * sizeof(char *));
     if (!args) return NULL;
-    args[0] = (char *)BOX64;
-    args[1] = (char *)path;
-    for (size_t i = 1; i < argc; i++) args[i + 1] = argv[i];
-    args[argc + 1] = NULL;
+    size_t i = 0;
+    if (kind == X86) args[i++] = (char *)BOX64;
+    else {
+        // PRoot doesn't run #! scripts by itself, so go through the shell
+        args[i++] = (char *)"/bin/sh";
+        args[i++] = (char *)APPIMAGE_RUNNER;
+    }
+    args[i++] = (char *)path;
+    for (size_t a = 1; a < argc; a++) args[i++] = argv[a];
+    args[i] = NULL;
     return args;
 }
 
@@ -80,9 +95,9 @@ typedef int (*spawn_fn)(pid_t *, const char *, const posix_spawn_file_actions_t 
 EXPORT int execve(const char *path, char *const argv[], char *const envp[]) {
     static execve_fn real;
     if (!real) real = (execve_fn)dlsym(RTLD_NEXT, "execve");
-    char **args = box64_argv(path, argv);
+    char **args = rewrite_argv(path, argv);
     if (!args) return real(path, argv, envp);
-    int result = real(BOX64, args, envp);
+    int result = real(args[0], args, envp);
     int saved = errno;
     free(args);
     errno = saved;
@@ -131,9 +146,9 @@ EXPORT int execvp(const char *file, char *const argv[]) {
 
 static int spawn(spawn_fn real, pid_t *pid, const char *path, const posix_spawn_file_actions_t *actions,
                  const posix_spawnattr_t *attr, char *const argv[], char *const envp[]) {
-    char **args = box64_argv(path, argv);
+    char **args = rewrite_argv(path, argv);
     if (!args) return real(pid, path, actions, attr, argv, envp);
-    int result = real(pid, BOX64, actions, attr, args, envp);
+    int result = real(pid, args[0], actions, attr, args, envp);
     free(args);
     return result;
 }

@@ -41,6 +41,8 @@ mv "$ROOTFS/.components.json" "$WORK/components.json"
 chroot "$ROOTFS" sh -c 'for p in libgbm1 libglx-mesa0 libegl-mesa0 libgl1-mesa-dri mesa-vulkan-drivers; do
     dpkg-query -W -f="\${Status}" "$p" 2>/dev/null | grep -q "install ok installed" && apt-mark hold "$p"; done; true'
 chroot "$ROOTFS" ldconfig
+# Our .desktop files (the AppImage runner) in the MIME cache file managers look up
+chroot "$ROOTFS" update-desktop-database -q /usr/share/applications
 echo "::endgroup::"
 
 echo "::group::Configure"

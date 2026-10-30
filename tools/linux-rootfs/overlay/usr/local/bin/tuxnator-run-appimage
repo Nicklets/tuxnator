@@ -1,0 +1,38 @@
+#!/bin/sh
+# Runs an AppImage without FUSE, which Android doesn't allow under PRoot: its SquashFS image is
+# extracted once into ~/.cache/appimages (again only when the file changes), then AppRun starts
+# from there. PCManFM opens .AppImage files with it, and libbox64exec sends every exec of an
+# AppImage here, so running one from a terminal or a launcher works too.
+set -e
+[ $# -ge 1 ] || { echo "usage: tuxnator-run-appimage <file.AppImage> [args...]" >&2; exit 2; }
+image=$(readlink -f "$1")
+shift
+
+# The SquashFS image starts right after the runtime ELF, which ends with its section headers
+squashfs_offset() {
+    if [ "$(od -An -t u1 -j 4 -N 1 "$1" | tr -d ' ')" = 2 ]; then
+        shoff=$(od -An -t u8 -j 40 -N 8 "$1"); entsize=$(od -An -t u2 -j 58 -N 2 "$1"); count=$(od -An -t u2 -j 60 -N 2 "$1")
+    else
+        shoff=$(od -An -t u4 -j 32 -N 4 "$1"); entsize=$(od -An -t u2 -j 46 -N 2 "$1"); count=$(od -An -t u2 -j 48 -N 2 "$1")
+    fi
+    echo $((shoff + entsize * count))
+}
+
+name=$(basename "$image")
+dir="${XDG_CACHE_HOME:-$HOME/.cache}/appimages/${name%.*}"
+stamp="$image $(stat -c %s-%Y "$image")"
+if [ "$(cat "$dir/.tuxnator-stamp" 2>/dev/null)" != "$stamp" ]; then
+    rm -rf "$dir" "$dir.tmp"
+    mkdir -p "$(dirname "$dir")"
+    unsquashfs -q -n -no-xattrs -o "$(squashfs_offset "$image")" -d "$dir.tmp" "$image" >/dev/null
+    echo "$stamp" > "$dir.tmp/.tuxnator-stamp"
+    mv "$dir.tmp" "$dir"
+fi
+
+export APPIMAGE="$image" APPDIR="$dir" ARGV0="$image" OWD="$PWD"
+# PRoot doesn't run #! scripts by itself, and AppRun is often one
+read -r first < "$dir/AppRun" || true
+case "$first" in
+    "#!"*) exec ${first#\#!} "$dir/AppRun" "$@" ;;
+    *) exec "$dir/AppRun" "$@" ;;
+esac

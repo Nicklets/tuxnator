@@ -1,0 +1,3 @@
+[Default Applications]
+application/vnd.appimage=tuxnator-appimage.desktop
+application/x-iso9660-appimage=tuxnator-appimage.desktop

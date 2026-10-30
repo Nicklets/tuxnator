@@ -107,9 +107,10 @@ done
 echo "::endgroup::"
 
 echo "::group::Desktop session and defaults"
-# tuxnator-desktop and system-wide defaults for PCManFM/libfm, copied over the rootfs
+# tuxnator-desktop, the AppImage runner and system-wide defaults for PCManFM/libfm, copied over
+# the rootfs
 cp -a "$HERE/overlay/." "$STAGING/"
-chmod 755 "$STAGING/usr/local/bin/tuxnator-desktop"
+chmod 755 "$STAGING/usr/local/bin/tuxnator-desktop" "$STAGING/usr/local/bin/tuxnator-run-appimage"
 echo "::endgroup::"
 
 # Record what was built, for the manifest

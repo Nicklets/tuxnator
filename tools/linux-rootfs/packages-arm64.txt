@@ -70,3 +70,5 @@ librsvg2-common
 desktop-file-utils
 gsettings-desktop-schemas
 libglib2.0-bin
+# AppImages without FUSE: tuxnator-run-appimage extracts them with unsquashfs
+squashfs-tools

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Run AppImage
+Name[pt_BR]=Executar AppImage
+Exec=tuxnator-run-appimage %f
+Icon=application-x-executable
+MimeType=application/vnd.appimage;application/x-iso9660-appimage;
+NoDisplay=true
+Terminal=false
