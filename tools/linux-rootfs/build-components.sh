@@ -43,6 +43,14 @@ for wrap in "arc4random_buf, vFpL" "arc4random_uniform, uFu" "memset_explicit, p
     sed -i "/^\/\/ *GO[A-Z]*(${wrap%%,*},/d" "$LIBC_WRAPS"
     sed -i "/^GO(arc4random, uFv)\$/a GO($wrap)" "$LIBC_WRAPS"
 done
+# The dynarec computes FS:/GS:-disp(%reg) (negative disp under 4 KiB) with scratch pointing at the
+# guest's base register, then loads the segment base into scratch: the base register (RAX in
+# SacredFire's TLS accesses, after `mov $0,%rax`) ends up holding the FS base and the next access
+# lands at twice it. Give the segment base a real scratch register again.
+GETED="$SRC/box64/src/dynarec/arm64/dynarec_arm64_helper.c"
+grep -qx '    if(rex.seg && !seg_done) {' "$GETED" || { echo "segment block not found in $GETED" >&2; exit 1; }
+sed -i 's/^    if(rex.seg \&\& !seg_done) {$/&\n        scratch = (hint>0 \&\& hint<xRAX) ? hint : x2;/' "$GETED"
+grep -qx '        scratch = (hint>0 && hint<xRAX) ? hint : x2;' "$GETED" || { echo "geted patch failed" >&2; exit 1; }
 # shellcheck disable=SC2086
 cmake -S "$SRC/box64" -B "$SRC/box64/build" $BOX64_CMAKE_FLAGS
 cmake --build "$SRC/box64/build" -j "$JOBS"
