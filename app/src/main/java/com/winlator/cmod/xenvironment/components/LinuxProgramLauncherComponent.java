@@ -150,6 +150,9 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         // keyboard input from XI2 device events: have them use core events instead
         launcher.putEnv("GDK_CORE_DEVICE_EVENTS", "1");
         launcher.putEnv("QT_XCB_NO_XI2", "1");
+        // GTK4 (XI2 only) renders through GL by default, and those frames never show up here
+        // (white windows); its cairo renderer draws with plain X requests
+        launcher.putEnv("GSK_RENDERER", "cairo");
         launcher.putEnv("TZ", java.util.TimeZone.getDefault().getID());
         // GLib's image loaders (glycin, rootfs v12+) decode in a bwrap sandbox, which needs user
         // namespaces that PRoot can't provide: every image failed to load. The guest only reaches
