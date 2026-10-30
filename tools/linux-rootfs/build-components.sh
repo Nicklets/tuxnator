@@ -31,12 +31,13 @@ echo "::group::Box64 $BOX64_REF"
 git clone --depth 1 --branch "$BOX64_REF" "$BOX64_REPO" "$SRC/box64"
 # glibc functions Box64 doesn't forward yet: x86 programs built against a recent glibc (Nix
 # bundles) jump to the unresolved symbol and crash when they call one. Each takes the signature of
-# the function it mirrors (memset, __memset_chk, explicit_bzero, strlcpy, strsignal...).
+# the function it mirrors (memset, __memset_chk, explicit_bzero, strlcpy, strsignal...); sigqueue
+# takes its union sigval in a register, like a pointer.
 LIBC_WRAPS="$SRC/box64/src/wrapped/wrappedlibc_private.h"
 grep -qx 'GO(arc4random, uFv)' "$LIBC_WRAPS" || { echo "arc4random not found in $LIBC_WRAPS" >&2; exit 1; }
 for wrap in "arc4random_buf, vFpL" "arc4random_uniform, uFu" "memset_explicit, pFpiL" \
             "__memset_explicit_chk, pFpiLL" "wcslcpy, LFppL" "wcslcat, LFppL" "closefrom, vFi" \
-            "sigabbrev_np, pFi" "sigdescr_np, pFi"; do
+            "sigabbrev_np, pFi" "sigdescr_np, pFi" "sigqueue, iFiip"; do
     grep -q "^GO[A-Z]*(${wrap%%,*}," "$LIBC_WRAPS" || sed -i "/^GO(arc4random, uFv)\$/a GO($wrap)" "$LIBC_WRAPS"
 done
 # shellcheck disable=SC2086
