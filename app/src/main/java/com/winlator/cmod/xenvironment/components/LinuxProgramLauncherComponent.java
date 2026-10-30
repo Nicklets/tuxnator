@@ -1,6 +1,5 @@
 package com.winlator.cmod.xenvironment.components;
 
-import android.os.Environment;
 import android.system.Os;
 import android.util.Log;
 
@@ -9,6 +8,7 @@ import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.xenvironment.EnvironmentComponent;
 import com.winlator.cmod.xenvironment.ImageFs;
+import com.winlator.cmod.xenvironment.LinuxContainerSettings;
 import com.winlator.cmod.xenvironment.LinuxRootfs;
 import com.winlator.cmod.xenvironment.ProotLauncher;
 
@@ -16,6 +16,8 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.Executors;
 
 /**
@@ -25,7 +27,7 @@ import java.util.concurrent.Executors;
 public class LinuxProgramLauncherComponent extends EnvironmentComponent {
     private static final String TAG = "LinuxGuest";
     public static final String GUEST_HOME = "/home/user";
-    /** Where Android's internal storage shows up in the guest */
+    /** Where the shared Android folders show up in the guest */
     public static final String ANDROID_STORAGE = "/media/android";
 
     private final LinuxRootfs rootfs;
@@ -117,8 +119,7 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         File fakeInputDir = new File(imageFs.getRootDir(), "dev/input");
         fakeInputDir.mkdirs();
         launcher.bind(fakeInputDir.getAbsolutePath(), "/tmp/fake-input");
-        // Android's internal storage, to move files between Android and the guest
-        launcher.bind(Environment.getExternalStorageDirectory().getAbsolutePath(), ANDROID_STORAGE);
+        bindSharedFolders(launcher);
         if (homeDir != null) {
             homeDir.mkdirs();
             launcher.bind(homeDir.getAbsolutePath(), GUEST_HOME);
@@ -150,6 +151,10 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         launcher.putEnv("GDK_CORE_DEVICE_EVENTS", "1");
         launcher.putEnv("QT_XCB_NO_XI2", "1");
         launcher.putEnv("TZ", java.util.TimeZone.getDefault().getID());
+        // GLib's image loaders (glycin, rootfs v12+) decode in a bwrap sandbox, which needs user
+        // namespaces that PRoot can't provide: every image failed to load. The guest only reaches
+        // the app's files and the folders shared in Settings, so they decode in-process instead.
+        launcher.putEnv("GLYCIN_DISABLE_SANDBOX", "i-know-the-risks");
         ensurePasswdEntry();
         launcher.putEnv("FAKE_EVDEV_DIR", "/tmp/fake-input");
         // libudev is in the rootfs but there is no udevd, so SDL2's udev enumeration fails and the
@@ -168,6 +173,38 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
 
         for (String name : envVars) launcher.putEnv(name, envVars.get(name));
         return launcher;
+    }
+
+    /**
+     * The guest sees only the app's own files and the Android folders chosen in Settings > Linux
+     * container, each as {@link #ANDROID_STORAGE}/name. Mount points of folders no longer shared
+     * are removed (delete() only removes empty directories, so nothing else can go).
+     */
+    private void bindSharedFolders(ProotLauncher launcher) {
+        File mountRoot = new File(rootfs.getRootDir(), ANDROID_STORAGE.substring(1));
+        makeMountPoint(mountRoot);
+        File[] stale = mountRoot.listFiles();
+        if (stale != null) for (File dir : stale) if (dir.isDirectory() && !FileUtils.isSymlink(dir)) dir.delete();
+
+        Set<String> names = new HashSet<>();
+        for (String path : new LinuxContainerSettings(environment.getContext()).getSharedFolders()) {
+            File folder = new File(path);
+            if (!folder.isDirectory()) continue;
+            // PRoot splits -b host:guest at the colon
+            String base = folder.getName().replace(':', '_');
+            String name = base;
+            for (int n = 2; !names.add(name); n++) name = base + " (" + n + ")";
+            makeMountPoint(new File(mountRoot, name));
+            launcher.bind(folder.getAbsolutePath(), ANDROID_STORAGE + "/" + name);
+        }
+    }
+
+    /** PRoot creates missing bind targets with mode 000, which the guest then can't open */
+    private static void makeMountPoint(File dir) {
+        dir.mkdirs();
+        dir.setReadable(true, true);
+        dir.setWritable(true, true);
+        dir.setExecutable(true, true);
     }
 
     /**

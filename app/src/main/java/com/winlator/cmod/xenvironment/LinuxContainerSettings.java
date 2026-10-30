@@ -5,6 +5,9 @@ import android.content.SharedPreferences;
 
 import androidx.preference.PreferenceManager;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Settings of the Linux container (Linux mode), edited in Settings > Linux container. They apply
  * to every Linux shortcut unless the shortcut sets its own value.
@@ -18,6 +21,7 @@ public class LinuxContainerSettings {
     private static final String KEY_RENDERER = "linux_container_renderer";
     private static final String KEY_RENDERER_DRIVER = "linux_container_renderer_driver";
     private static final String KEY_BOX64_PRESET = "linux_container_box64_preset";
+    private static final String KEY_SHARED_FOLDERS = "linux_container_shared_folders";
 
     private final SharedPreferences preferences;
 
@@ -50,5 +54,21 @@ public class LinuxContainerSettings {
 
     public void setBox64Preset(String presetId) {
         preferences.edit().putString(KEY_BOX64_PRESET, presetId).apply();
+    }
+
+    /**
+     * Android folders (absolute paths) the guest can see, under /media/android. Nothing else of
+     * the device's storage is reachable from Linux mode.
+     */
+    public List<String> getSharedFolders() {
+        List<String> folders = new ArrayList<>();
+        for (String folder : preferences.getString(KEY_SHARED_FOLDERS, "").split("\n")) {
+            if (!folder.isEmpty()) folders.add(folder);
+        }
+        return folders;
+    }
+
+    public void setSharedFolders(List<String> folders) {
+        preferences.edit().putString(KEY_SHARED_FOLDERS, String.join("\n", folders)).apply();
     }
 }

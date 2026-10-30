@@ -1,8 +1,12 @@
 package com.winlator.cmod.ui.settings
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.provider.DocumentsContract
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
@@ -22,7 +26,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.DesktopWindows
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.DeveloperBoard
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Memory
@@ -38,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,13 +66,28 @@ import com.winlator.cmod.ui.theme.WinZTheme
 import com.winlator.cmod.xenvironment.LinuxContainerSettings
 import com.winlator.cmod.xenvironment.LinuxRootfs
 
-/** Settings > Linux container: renderer, renderer driver and Box64 preset of Linux mode. */
+/** Settings > Linux container: renderer, renderer driver, Box64 preset and shared folders of Linux mode. */
 class LinuxContainerSettingsActivity : AppCompatActivity() {
+    private lateinit var settings: LinuxContainerSettings
+    private val sharedFolders = mutableStateListOf<String>()
+
+    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val path = treeUriToPath(uri)
+        if (path == null) {
+            Toast.makeText(this, "Escolha uma pasta do armazenamento do aparelho", Toast.LENGTH_LONG).show()
+        } else if (path !in sharedFolders) {
+            sharedFolders.add(path)
+            settings.sharedFolders = sharedFolders.toList()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyAppFullscreen(this)
 
-        val settings = LinuxContainerSettings(this)
+        settings = LinuxContainerSettings(this)
+        sharedFolders.addAll(settings.sharedFolders)
         val rootfs = LinuxRootfs.find(this)
         val rootfsStatus = if (rootfs.isInstalled) "Rootfs Debian v${rootfs.version} instalado" else "Rootfs Debian não instalado"
 
@@ -97,6 +120,12 @@ class LinuxContainerSettingsActivity : AppCompatActivity() {
                     onRenderer = settings::setRenderer,
                     onDriver = onDriver,
                     onBox64Preset = settings::setBox64Preset,
+                    sharedFolders = sharedFolders,
+                    onAddFolder = { pickFolder.launch(null) },
+                    onRemoveFolder = { path ->
+                        sharedFolders.remove(path)
+                        settings.sharedFolders = sharedFolders.toList()
+                    },
                     onOpenDesktop = ::openDesktop,
                     onBack = { finish() }
                 )
@@ -144,6 +173,24 @@ class LinuxContainerSettingsActivity : AppCompatActivity() {
         })
     }
 
+    /**
+     * The folder behind a document tree from the system picker, e.g. "primary:Download/Games" from
+     * the external storage provider. The guest gets it as a PRoot bind, which needs a real path.
+     */
+    private fun treeUriToPath(uri: Uri): String? {
+        val docId = DocumentsContract.getTreeDocumentId(uri)
+        if (uri.authority == "com.android.providers.downloads.documents") {
+            return if (docId == "downloads") Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path
+                else docId.removePrefix("raw:").takeIf { it.startsWith("/") }
+        }
+        if (uri.authority != "com.android.externalstorage.documents") return null
+        val volume = docId.substringBefore(':')
+        val relative = docId.substringAfter(':', "")
+        val root = if (volume == "primary") Environment.getExternalStorageDirectory() else File("/storage", volume)
+        val folder = if (relative.isEmpty()) root else File(root, relative)
+        return folder.path.takeIf { folder.isDirectory }
+    }
+
     private companion object {
         const val DESKTOP_SHORTCUT_NAME = "Área de trabalho Linux"
     }
@@ -160,6 +207,9 @@ private fun LinuxContainerSettingsScreen(
     onRenderer: (String) -> Unit,
     onDriver: (String) -> Unit,
     onBox64Preset: (String) -> Unit,
+    sharedFolders: List<String>,
+    onAddFolder: () -> Unit,
+    onRemoveFolder: (String) -> Unit,
     onOpenDesktop: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -214,6 +264,36 @@ private fun LinuxContainerSettingsScreen(
                         Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
+
+            item("folders-title") { SectionTitle("PASTAS COMPARTILHADAS") }
+            item("folders") {
+                GroupCard {
+                    sharedFolders.forEach { path ->
+                        Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            SmallIcon(Icons.Outlined.Folder)
+                            Spacer(Modifier.width(11.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(File(path).name, fontWeight = FontWeight.Medium)
+                                Text(path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = { onRemoveFolder(path) }) {
+                                Icon(Icons.Outlined.Close, "Remover", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        GroupDivider()
+                    }
+                    Surface(onClick = onAddFolder, modifier = Modifier.fillMaxWidth(), color = Color.Transparent) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                            SmallIcon(Icons.Outlined.CreateNewFolder)
+                            Spacer(Modifier.width(11.dp))
+                            Text("Adicionar pasta", fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+            }
+            item("folders-hint") {
+                Hint("O Linux só acessa os arquivos do próprio app e as pastas desta lista, que aparecem em \"Android\" na área de trabalho. Mudanças valem na próxima vez que o emulador abrir.")
             }
 
             item("render-title") { SectionTitle("RENDERIZAÇÃO") }

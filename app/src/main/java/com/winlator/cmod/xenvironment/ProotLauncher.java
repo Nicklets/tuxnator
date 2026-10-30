@@ -1,7 +1,6 @@
 package com.winlator.cmod.xenvironment;
 
 import android.content.Context;
-import android.os.Environment;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -31,7 +30,6 @@ public class ProotLauncher {
         bind("/dev");
         bind("/proc");
         bind("/sys");
-        bind(Environment.getExternalStorageDirectory().getAbsolutePath(), "/mnt/sdcard");
 
         putEnv("HOME", "/root");
         putEnv("USER", "root");

@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.os.Environment;
 import android.util.Log;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -77,7 +78,8 @@ public class LinuxRuntimeTestActivity extends Activity {
                 log("Rootfs not installed. Pass --es install <path to linux-rootfs-N.tar.zst>");
                 return;
             }
-            run(new ProotLauncher(this, rootfs), cmd);
+            // Debug tool: the whole internal storage, to reach test files pushed with adb
+            run(new ProotLauncher(this, rootfs).bind(Environment.getExternalStorageDirectory().getAbsolutePath(), "/mnt/sdcard"), cmd);
         });
     }
 
