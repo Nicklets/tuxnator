@@ -23,6 +23,7 @@ import java.util.List;
 
 public class WindowManager extends XResourceManager {
     public enum FocusRevertTo {NONE, POINTER_ROOT, PARENT}
+    private OnFocusChangeListener onFocusChangeListener;
     public final Window rootWindow;
     private final SparseArray<Window> windows = new SparseArray<>();
     public final DrawableManager drawableManager;
@@ -182,6 +183,16 @@ public class WindowManager extends XResourceManager {
         if (focusedWindow != null && focusedWindow != rootWindow) {
             focusedWindow.sendEvent(Event.FOCUS_CHANGE, new FocusChange(true, focusedWindow, FocusChange.NOTIFY_NONLINEAR));
         }
+        if (onFocusChangeListener != null) onFocusChangeListener.onFocusChange(previous, focusedWindow);
+    }
+
+    /** XInput2 sends its own focus events (GTK4 tracks the keyboard focus with them) */
+    public interface OnFocusChangeListener {
+        void onFocusChange(Window previous, Window focused);
+    }
+
+    public void setOnFocusChangeListener(OnFocusChangeListener onFocusChangeListener) {
+        this.onFocusChangeListener = onFocusChangeListener;
     }
 
     public FocusRevertTo getFocusRevertTo() {

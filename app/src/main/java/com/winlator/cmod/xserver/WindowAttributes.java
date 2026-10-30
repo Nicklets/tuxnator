@@ -95,6 +95,11 @@ public class WindowAttributes {
         return cursor == null && parent != null ? parent.attributes.getCursor() : cursor;
     }
 
+    /** The window's own cursor (null: the parent's), as XIChangeCursor sets it */
+    public void setCursor(Cursor cursor) {
+        this.cursor = cursor;
+    }
+
     public Bitmask getEventMask() {
         return eventMask;
     }

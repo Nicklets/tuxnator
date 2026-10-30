@@ -18,6 +18,7 @@ import com.winlator.cmod.xserver.extensions.XCompositeExtension;
 import com.winlator.cmod.xserver.extensions.XFixesExtension;
 import com.winlator.cmod.xserver.extensions.XTestExtension;
 import com.winlator.cmod.xserver.extensions.XInput2Extension;
+import com.winlator.cmod.xserver.events.XIEnterEvent;
 
 import java.nio.charset.Charset;
 import java.util.EnumMap;
@@ -246,7 +247,22 @@ public class XServer {
         extensions.put(RandrExtension.MAJOR_OPCODE, new RandrExtension(screenInfo));
         extensions.put(SyncExtension.MAJOR_OPCODE, new SyncExtension(this));
         extensions.put(GLXExtension.MAJOR_OPCODE, new GLXExtension(this));
-        extensions.put(XInput2Extension.MAJOR_OPCODE, new XInput2Extension());
+        XInput2Extension xInput2 = new XInput2Extension();
+        extensions.put(XInput2Extension.MAJOR_OPCODE, xInput2);
+        windowManager.setOnFocusChangeListener((previous, focused) -> {
+            if (previous != null && previous != windowManager.rootWindow) {
+                xInput2.sendCrossingEvent(this, XInput2Extension.XI_FOCUS_OUT, previous, XIEnterEvent.MODE_NORMAL, XIEnterEvent.DETAIL_NONLINEAR, false);
+            }
+            if (focused != null && focused != windowManager.rootWindow) {
+                xInput2.sendCrossingEvent(this, XInput2Extension.XI_FOCUS_IN, focused, XIEnterEvent.MODE_NORMAL, XIEnterEvent.DETAIL_NONLINEAR, true);
+            }
+        });
+        windowManager.addOnResourceLifecycleListener(new XResourceManager.OnResourceLifecycleListener() {
+            @Override
+            public void onFreeResource(XResource resource) {
+                if (resource instanceof Window) xInput2.onDestroyWindow((Window)resource);
+            }
+        });
         extensions.put(XCompositeExtension.MAJOR_OPCODE, new XCompositeExtension(this));
         extensions.put(XFixesExtension.MAJOR_OPCODE, new XFixesExtension());
         extensions.put(XTestExtension.MAJOR_OPCODE, new XTestExtension(this));

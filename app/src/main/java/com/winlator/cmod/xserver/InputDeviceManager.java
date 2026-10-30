@@ -12,6 +12,8 @@ import com.winlator.cmod.xserver.events.LeaveNotify;
 import com.winlator.cmod.xserver.events.MappingNotify;
 import com.winlator.cmod.xserver.events.MotionNotify;
 import com.winlator.cmod.xserver.events.PointerWindowEvent;
+import com.winlator.cmod.xserver.events.XIEnterEvent;
+import com.winlator.cmod.xserver.extensions.XInput2Extension;
 
 public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyboard.OnKeyboardListener, WindowManager.OnWindowModificationListener, XResourceManager.OnResourceLifecycleListener {
     private static final byte MOUSE_WHEEL_DELTA = 120;
@@ -74,6 +76,36 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
         return pointWindow;
     }
 
+    /**
+     * Sends an input event as XI2 instead of core when an XI2 grab takes it, or when a client
+     * selected it with XI2 on a window at or below the one core delivery would pick (coreWindow),
+     * like Xorg trying XI2 before core at each window. Returns false to go on with core delivery.
+     */
+    private boolean sendXI2Event(int evtype, int detail, Window source, Window stopAt, Window coreWindow) {
+        XInput2Extension xInput2 = xServer.getExtension(XInput2Extension.MAJOR_OPCODE);
+        if (xInput2 == null) return false;
+        boolean pointer = evtype == XInput2Extension.XI_BUTTON_PRESS || evtype == XInput2Extension.XI_BUTTON_RELEASE || evtype == XInput2Extension.XI_MOTION;
+        int deviceId = pointer ? XInput2Extension.MASTER_POINTER_ID : XInput2Extension.MASTER_KEYBOARD_ID;
+        Window xi2Window = xInput2.findEventWindow(source, stopAt, evtype, deviceId);
+
+        if (!xInput2.isGrabbed(deviceId)) {
+            // A core grab keeps the pointer for core events
+            if (pointer && xServer.grabManager.getWindow() != null) return false;
+            if (xi2Window == null) return false;
+            if (coreWindow != null && coreWindow != xi2Window && !coreWindow.isAncestorOf(xi2Window)) return false;
+        }
+        xInput2.sendDeviceEvent(xServer, evtype, detail, xi2Window, pointWindow, 0);
+        return true;
+    }
+
+    private void sendXI2Crossing(int evtype, Window window, PointerWindowEvent.Mode mode, PointerWindowEvent.Detail detail, boolean focus) {
+        XInput2Extension xInput2 = xServer.getExtension(XInput2Extension.MAJOR_OPCODE);
+        if (xInput2 == null) return;
+        byte xiDetail = detail == PointerWindowEvent.Detail.ANCESTOR ? XIEnterEvent.DETAIL_ANCESTOR
+            : detail == PointerWindowEvent.Detail.INFERIOR ? XIEnterEvent.DETAIL_INFERIOR : XIEnterEvent.DETAIL_NONLINEAR;
+        xInput2.sendCrossingEvent(xServer, evtype, window, (byte)mode.ordinal(), xiDetail, focus);
+    }
+
     private void sendEvent(Window window, int eventId, Event event) {
         Window grabWindow = xServer.grabManager.getWindow();
         if (grabWindow != null && grabWindow.attributes.isEnabled()) {
@@ -130,6 +162,8 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
         Bitmask keyButMask = getKeyButMask();
         sendEvent(windowA, Event.LEAVE_WINDOW, new LeaveNotify(detailA, xServer.windowManager.rootWindow, windowA, null, x, y, localPointA[0], localPointA[1], keyButMask, mode, sameScreenAndFocus));
         sendEvent(windowB, Event.ENTER_WINDOW, new EnterNotify(detailB, xServer.windowManager.rootWindow, windowB, null, x, y, localPointB[0], localPointB[1], keyButMask, mode, sameScreenAndFocus));
+        sendXI2Crossing(XInput2Extension.XI_LEAVE, windowA, mode, detailA, windowA.isAncestorOf(xServer.windowManager.getFocusedWindow()));
+        sendXI2Crossing(XInput2Extension.XI_ENTER, windowB, mode, detailB, sameScreenAndFocus);
     }
 
     @Override
@@ -141,6 +175,8 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
         }
         else {
             Window grabWindow = xServer.grabManager.getWindow();
+            Window coreWindow = grabWindow == null ? pointWindow.getAncestorWithEventId(Event.BUTTON_PRESS) : grabWindow;
+            if (sendXI2Event(XInput2Extension.XI_BUTTON_PRESS, button.code(), pointWindow, null, coreWindow)) return;
             if (grabWindow == null) {
                 grabWindow = pointWindow.getAncestorWithEventId(Event.BUTTON_PRESS);
                 if (grabWindow != null) xServer.grabManager.activatePointerGrab(grabWindow);
@@ -171,6 +207,7 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
             Bitmask eventMask = createPointerEventMask();
             Window grabWindow = xServer.grabManager.getWindow();
             Window window = grabWindow == null || xServer.grabManager.isOwnerEvents() ? pointWindow.getAncestorWithEventMask(eventMask) : null;
+            if (sendXI2Event(XInput2Extension.XI_BUTTON_RELEASE, button.code(), pointWindow, null, window != null ? window : grabWindow)) return;
 
             if (grabWindow != null || window != null) {
                 Window eventWindow = window != null ? window : grabWindow;
@@ -201,6 +238,7 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
         Bitmask eventMask = createPointerEventMask();
         Window grabWindow = xServer.grabManager.getWindow();
         Window window = grabWindow == null || xServer.grabManager.isOwnerEvents() ? pointWindow.getAncestorWithEventMask(eventMask) : null;
+        if (sendXI2Event(XInput2Extension.XI_MOTION, 0, pointWindow, null, window != null ? window : grabWindow)) return;
 
         if (grabWindow != null || window != null) {
             Window eventWindow = window != null ? window : grabWindow;
@@ -221,8 +259,20 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
         Window child = null;
         if (focusedWindow.isAncestorOf(pointWindow)) {
             eventWindow = pointWindow.getAncestorWithEventId(Event.KEY_PRESS, focusedWindow);
-            child = eventWindow.isAncestorOf(pointWindow) ? pointWindow : null;
+            child = eventWindow != null && eventWindow.isAncestorOf(pointWindow) ? pointWindow : null;
         }
+        Window keySource = focusedWindow.isAncestorOf(pointWindow) ? pointWindow : focusedWindow;
+        if (keysym != 0 && !xServer.keyboard.hasKeysym(keycode, keysym)) {
+            xServer.keyboard.setKeysyms(keycode, keysym, keysym);
+            MappingNotify mappingNotify = new MappingNotify(MappingNotify.Request.KEYBOARD, keycode, 1);
+            if (eventWindow != null) eventWindow.sendEvent(mappingNotify);
+            else if (focusedWindow.hasEventListenerFor(Event.KEY_PRESS)) focusedWindow.sendEvent(mappingNotify);
+            XInput2Extension xInput2 = xServer.getExtension(XInput2Extension.MAJOR_OPCODE);
+            if (xInput2 != null) xInput2.sendToSelectingClients(keySource, focusedWindow, XInput2Extension.XI_KEY_PRESS, mappingNotify);
+        }
+        if (sendXI2Event(XInput2Extension.XI_KEY_PRESS, keycode & 0xff, keySource, focusedWindow,
+                eventWindow != null ? eventWindow : (focusedWindow.hasEventListenerFor(Event.KEY_PRESS) ? focusedWindow : null))) return;
+
         if (eventWindow == null) {
             if (!focusedWindow.hasEventListenerFor(Event.KEY_PRESS)) return;
             eventWindow = focusedWindow;
@@ -234,11 +284,6 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
         short x = xServer.pointer.getX();
         short y = xServer.pointer.getY();
         short[] localPoint = eventWindow.rootPointToLocal(x, y);
-
-        if (keysym != 0 && !xServer.keyboard.hasKeysym(keycode, keysym)) {
-            xServer.keyboard.setKeysyms(keycode, keysym, keysym);
-            eventWindow.sendEvent(new MappingNotify(MappingNotify.Request.KEYBOARD, keycode, 1));
-        }
 
         eventWindow.sendEvent(Event.KEY_PRESS, new KeyPress(keycode, xServer.windowManager.rootWindow, eventWindow, child, x, y, localPoint[0], localPoint[1], keyButMask));
     }
@@ -253,8 +298,12 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
         Window child = null;
         if (focusedWindow.isAncestorOf(pointWindow)) {
             eventWindow = pointWindow.getAncestorWithEventId(Event.KEY_RELEASE, focusedWindow);
-            child = eventWindow.isAncestorOf(pointWindow) ? pointWindow : null;
+            child = eventWindow != null && eventWindow.isAncestorOf(pointWindow) ? pointWindow : null;
         }
+        Window keySource = focusedWindow.isAncestorOf(pointWindow) ? pointWindow : focusedWindow;
+        if (sendXI2Event(XInput2Extension.XI_KEY_RELEASE, keycode & 0xff, keySource, focusedWindow,
+                eventWindow != null ? eventWindow : (focusedWindow.hasEventListenerFor(Event.KEY_RELEASE) ? focusedWindow : null))) return;
+
         if (eventWindow == null) {
             if (!focusedWindow.hasEventListenerFor(Event.KEY_RELEASE)) return;
             eventWindow = focusedWindow;

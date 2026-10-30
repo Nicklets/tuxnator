@@ -39,9 +39,10 @@ if [ -L "$dir/entrypoint" ] && [ -d "$dir/nix/store" ]; then
         if [ -L "$link" ] || [ ! -e "$link" ]; then ln -sfn "$path" "$link"; fi
     done
     target="$dir/entrypoint"
-    # Nix ships newer GLib/GTK than the rootfs: Box64 must run the bundled x86 ones instead of
-    # replacing them with the native libraries, which lack the newer functions
-    export BOX64_EMULATED_LIBS="libglib-2.0.so.0:libgobject-2.0.so.0:libgio-2.0.so.0:libgmodule-2.0.so.0:libgthread-2.0.so.0:libgirepository-2.0.so.0:libgdk_pixbuf-2.0.so.0:libpango-1.0.so.0:libpangocairo-1.0.so.0:libpangoft2-1.0.so.0:libcairo.so.2:libcairo-gobject.so.2:libgtk-3.so.0:libgdk-3.so.0:libatk-1.0.so.0:libfreetype.so.6:libfontconfig.so.1:libharfbuzz.so.0"
+    # Nix ships newer libraries than the rootfs (GLib, OpenSSL, expat...): Box64 must run the
+    # bundled x86 ones rather than swap in native ones that lack their newer functions. It still
+    # keeps libc, X11/xcb, GL/EGL, Vulkan and sound native, so drawing goes to the GPU.
+    export BOX64_PREFER_EMULATED=1 BOX64_WRAP_EGL=1
 fi
 
 export APPIMAGE="$image" APPDIR="$dir" ARGV0="$image" OWD="$PWD"
