@@ -25,7 +25,7 @@ jobs:
     # Build inside Debian itself so components link against the same glibc as the rootfs,
     # and so mmdebstrap has an up-to-date Debian keyring. Privileged for chroot/mounts.
     container:
-      image: debian:trixie
+      image: debian:forky
       options: --privileged
     env:
       WORK: /work
