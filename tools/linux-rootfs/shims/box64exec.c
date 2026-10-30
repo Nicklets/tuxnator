@@ -26,20 +26,41 @@
 
 extern char **environ;
 
-enum { NATIVE, X86, APPIMAGE };
+enum { NATIVE, X86, APPIMAGE, X86_SCRIPT };
 
-static int classify(const char *path) {
-    int fd = open(path, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return NATIVE;
-    Elf64_Ehdr header;
-    ssize_t n = read(fd, &header, sizeof(header));
-    close(fd);
-    if (n < (ssize_t)(EI_NIDENT + 4) || memcmp(header.e_ident, ELFMAG, SELFMAG) != 0) return NATIVE;
+#define SHEBANG_MAX 256
+#define BLANKS " \t\r"
+
+static int elf_kind(const Elf64_Ehdr *header, ssize_t n) {
+    if (n < (ssize_t)(EI_NIDENT + 4) || memcmp(header->e_ident, ELFMAG, SELFMAG) != 0) return NATIVE;
     // AppImages mark their runtime with "AI" and the format type in the ELF padding
-    if (header.e_ident[8] == 'A' && header.e_ident[9] == 'I' && (header.e_ident[10] == 1 || header.e_ident[10] == 2))
+    if (header->e_ident[8] == 'A' && header->e_ident[9] == 'I' && (header->e_ident[10] == 1 || header->e_ident[10] == 2))
         return APPIMAGE;
     // e_machine sits at the same offset in 32-bit headers
-    return header.e_machine == EM_X86_64 || header.e_machine == EM_386 ? X86 : NATIVE;
+    return header->e_machine == EM_X86_64 || header->e_machine == EM_386 ? X86 : NATIVE;
+}
+
+/* What path is; for a script, line gets the rest of its "#!" line */
+static int classify(const char *path, char line[SHEBANG_MAX], int follow_shebang) {
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return NATIVE;
+    union { Elf64_Ehdr elf; char text[SHEBANG_MAX]; } head;
+    ssize_t n = read(fd, &head, sizeof(head) - 1);
+    close(fd);
+    if (follow_shebang && n >= 2 && head.text[0] == '#' && head.text[1] == '!') {
+        head.text[n] = '\0';
+        size_t len = strcspn(head.text + 2, "\n");
+        memcpy(line, head.text + 2, len);
+        line[len] = '\0';
+        // Builds that ship their own x86 interpreter (Nix's bash, say) can't run it natively
+        char interp[SHEBANG_MAX];
+        const char *start = line + strspn(line, BLANKS);
+        len = strcspn(start, BLANKS);
+        memcpy(interp, start, len);
+        interp[len] = '\0';
+        return len > 0 && classify(interp, NULL, 0) == X86 ? X86_SCRIPT : NATIVE;
+    }
+    return elf_kind(&head.elf, n);
 }
 
 /* Resolves a name like execvp() does; returns 0 and fills out with the path, or -1 */
@@ -66,17 +87,35 @@ static int resolve(const char *file, char *out, size_t size) {
     return -1;
 }
 
-/* argv for "box64 path args..." or "/bin/sh tuxnator-run-appimage path args...", or NULL when path
- * runs as is; args[0] is the program to execute (caller frees it) */
+/* argv for "box64 path args...", "box64 interpreter [arg] path args..." or "/bin/sh
+ * tuxnator-run-appimage path args...", or NULL when path runs as is; args[0] is the program to
+ * execute (caller frees it) */
 static char **rewrite_argv(const char *path, char *const argv[]) {
-    int kind = classify(path);
+    char line[SHEBANG_MAX];
+    int kind = classify(path, line, 1);
     if (kind == NATIVE) return NULL;
     size_t argc = 0;
     while (argv && argv[argc]) argc++;
-    char **args = malloc((argc + 3) * sizeof(char *));
+    // At most three arguments before the path, then a copy of the #! line the args point into
+    char **args = malloc((argc + 4) * sizeof(char *) + SHEBANG_MAX);
     if (!args) return NULL;
     size_t i = 0;
     if (kind == X86) args[i++] = (char *)BOX64;
+    else if (kind == X86_SCRIPT) {
+        // Split like the kernel does: the interpreter, then the rest of the line as one argument
+        char *copy = strcpy((char *)(args + argc + 4), line);
+        char *interp = copy + strspn(copy, BLANKS);
+        char *rest = interp + strcspn(interp, BLANKS);
+        args[i++] = (char *)BOX64;
+        args[i++] = interp;
+        if (*rest) {
+            *rest++ = '\0';
+            rest += strspn(rest, BLANKS);
+            size_t len = strlen(rest);
+            while (len > 0 && strchr(BLANKS, rest[len - 1])) rest[--len] = '\0';
+            if (len > 0) args[i++] = rest;
+        }
+    }
     else {
         // PRoot doesn't run #! scripts by itself, so go through the shell
         args[i++] = (char *)"/bin/sh";

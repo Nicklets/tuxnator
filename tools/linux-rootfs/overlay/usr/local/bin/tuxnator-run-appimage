@@ -29,10 +29,25 @@ if [ "$(cat "$dir/.tuxnator-stamp" 2>/dev/null)" != "$stamp" ]; then
     mv "$dir.tmp" "$dir"
 fi
 
+target="$dir/AppRun"
+# Nix-bundled AppImages (nix-appimage) bind their /nix/store over /nix in a user namespace, which
+# PRoot can't create: link the store paths into the guest's /nix/store and start the entrypoint
+if [ -L "$dir/entrypoint" ] && [ -d "$dir/nix/store" ]; then
+    mkdir -p /nix/store
+    for path in "$dir"/nix/store/*; do
+        link="/nix/store/${path##*/}"
+        if [ -L "$link" ] || [ ! -e "$link" ]; then ln -sfn "$path" "$link"; fi
+    done
+    target="$dir/entrypoint"
+    # Nix ships newer GLib/GTK than the rootfs: Box64 must run the bundled x86 ones instead of
+    # replacing them with the native libraries, which lack the newer functions
+    export BOX64_EMULATED_LIBS="libglib-2.0.so.0:libgobject-2.0.so.0:libgio-2.0.so.0:libgmodule-2.0.so.0:libgthread-2.0.so.0:libgirepository-2.0.so.0:libgdk_pixbuf-2.0.so.0:libpango-1.0.so.0:libpangocairo-1.0.so.0:libpangoft2-1.0.so.0:libcairo.so.2:libcairo-gobject.so.2:libgtk-3.so.0:libgdk-3.so.0:libatk-1.0.so.0:libfreetype.so.6:libfontconfig.so.1:libharfbuzz.so.0"
+fi
+
 export APPIMAGE="$image" APPDIR="$dir" ARGV0="$image" OWD="$PWD"
 # PRoot doesn't run #! scripts by itself, and AppRun is often one
-read -r first < "$dir/AppRun" || true
+read -r first < "$target" || true
 case "$first" in
-    "#!"*) exec ${first#\#!} "$dir/AppRun" "$@" ;;
-    *) exec "$dir/AppRun" "$@" ;;
+    "#!"*) exec ${first#\#!} "$target" "$@" ;;
+    *) exec "$target" "$@" ;;
 esac
