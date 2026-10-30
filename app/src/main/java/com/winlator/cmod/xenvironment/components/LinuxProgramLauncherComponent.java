@@ -1,5 +1,7 @@
 package com.winlator.cmod.xenvironment.components;
 
+import android.os.Environment;
+import android.system.Os;
 import android.util.Log;
 
 import com.winlator.cmod.core.Callback;
@@ -23,6 +25,8 @@ import java.util.concurrent.Executors;
 public class LinuxProgramLauncherComponent extends EnvironmentComponent {
     private static final String TAG = "LinuxGuest";
     public static final String GUEST_HOME = "/home/user";
+    /** Where Android's internal storage shows up in the guest */
+    public static final String ANDROID_STORAGE = "/media/android";
 
     private final LinuxRootfs rootfs;
     private final String commandLine;
@@ -113,9 +117,12 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
         File fakeInputDir = new File(imageFs.getRootDir(), "dev/input");
         fakeInputDir.mkdirs();
         launcher.bind(fakeInputDir.getAbsolutePath(), "/tmp/fake-input");
+        // Android's internal storage, to move files between Android and the guest
+        launcher.bind(Environment.getExternalStorageDirectory().getAbsolutePath(), ANDROID_STORAGE);
         if (homeDir != null) {
             homeDir.mkdirs();
             launcher.bind(homeDir.getAbsolutePath(), GUEST_HOME);
+            addAndroidStorageShortcuts();
         }
         launcher.setWorkingDir(workingDir);
 
@@ -161,6 +168,32 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
 
         for (String name : envVars) launcher.putEnv(name, envVars.get(name));
         return launcher;
+    }
+
+    /**
+     * A desktop icon and a file manager bookmark (GTK) named "Android" for {@link #ANDROID_STORAGE}.
+     * The icon is a symlink to that guest-only path, which doesn't exist on the Android side, so
+     * nothing walking the container's home outside PRoot ends up in the user's storage.
+     */
+    private void addAndroidStorageShortcuts() {
+        try {
+            File link = new File(homeDir, "Desktop/Android");
+            if (!link.exists() && !FileUtils.isSymlink(link)) {
+                link.getParentFile().mkdirs();
+                Os.symlink(ANDROID_STORAGE, link.getPath());
+            }
+            File bookmarks = new File(homeDir, ".config/gtk-3.0/bookmarks");
+            String bookmark = "file://" + ANDROID_STORAGE + " Android";
+            String content = bookmarks.isFile() ? FileUtils.readString(bookmarks) : "";
+            if (!content.contains(bookmark)) {
+                bookmarks.getParentFile().mkdirs();
+                if (!content.isEmpty() && !content.endsWith("\n")) content += "\n";
+                FileUtils.writeString(bookmarks, content + bookmark + "\n");
+            }
+        }
+        catch (Exception e) {
+            Log.w(TAG, "Could not add the Android storage shortcuts", e);
+        }
     }
 
     /**
