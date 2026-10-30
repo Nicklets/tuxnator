@@ -38,7 +38,10 @@ grep -qx 'GO(arc4random, uFv)' "$LIBC_WRAPS" || { echo "arc4random not found in 
 for wrap in "arc4random_buf, vFpL" "arc4random_uniform, uFu" "memset_explicit, pFpiL" \
             "__memset_explicit_chk, pFpiLL" "wcslcpy, LFppL" "wcslcat, LFppL" "closefrom, vFi" \
             "sigabbrev_np, pFi" "sigdescr_np, pFi" "sigqueue, iFiip"; do
-    grep -q "^GO[A-Z]*(${wrap%%,*}," "$LIBC_WRAPS" || sed -i "/^GO(arc4random, uFv)\$/a GO($wrap)" "$LIBC_WRAPS"
+    grep -q "^GO[A-Z]*(${wrap%%,*}," "$LIBC_WRAPS" && continue
+    # rebuild_wrappers.py counts commented-out entries too (sigqueue has one): drop it first
+    sed -i "/^\/\/ *GO[A-Z]*(${wrap%%,*},/d" "$LIBC_WRAPS"
+    sed -i "/^GO(arc4random, uFv)\$/a GO($wrap)" "$LIBC_WRAPS"
 done
 # shellcheck disable=SC2086
 cmake -S "$SRC/box64" -B "$SRC/box64/build" $BOX64_CMAKE_FLAGS
