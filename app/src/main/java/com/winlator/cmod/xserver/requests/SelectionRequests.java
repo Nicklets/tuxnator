@@ -20,8 +20,12 @@ public abstract class SelectionRequests {
         int atom = inputStream.readInt();
         int timestamp = inputStream.readInt();
 
-        Window owner = client.xServer.windowManager.getWindow(windowId);
-        if (owner == null) throw new BadWindow(windowId);
+        // None gives the selection up (GTK does it when clearing the clipboard)
+        Window owner = null;
+        if (windowId != 0) {
+            owner = client.xServer.windowManager.getWindow(windowId);
+            if (owner == null) throw new BadWindow(windowId);
+        }
         if (!Atom.isValid(atom)) throw new BadAtom(atom);
 
         client.xServer.selectionManager.setSelection(atom, owner, client, timestamp);
