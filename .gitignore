@@ -18,3 +18,5 @@ app/src/main/assets/imagefs.tar.zst.*
 app/src/main/assets/proton-*.tar.zst
 # Cloned at build time (see codemagic.yaml / .github/workflows/build.yml)
 app/src/main/cpp/adrenotools/
+# Kotlin compiler daemon state
+.kotlin/
