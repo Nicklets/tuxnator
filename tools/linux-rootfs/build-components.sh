@@ -49,11 +49,12 @@ done
 # The dynarec computes FS:/GS:-disp(%reg) (negative disp under 4 KiB) with scratch pointing at the
 # guest's base register, then loads the segment base into scratch: the base register (RAX in
 # SacredFire's TLS accesses, after `mov $0,%rax`) ends up holding the FS base and the next access
-# lands at twice it. Give the segment base a real scratch register again.
+# lands at twice it. Give the segment base a real scratch register again (sent upstream as
+# ptitSeb/box64#4645; drop this once Box64 has it).
 GETED="$SRC/box64/src/dynarec/arm64/dynarec_arm64_helper.c"
 grep -qx '    if(rex.seg && !seg_done) {' "$GETED" || { echo "segment block not found in $GETED" >&2; exit 1; }
-sed -i 's/^    if(rex.seg \&\& !seg_done) {$/&\n        scratch = (hint>0 \&\& hint<xRAX) ? hint : x2;/' "$GETED"
-grep -qx '        scratch = (hint>0 && hint<xRAX) ? hint : x2;' "$GETED" || { echo "geted patch failed" >&2; exit 1; }
+sed -i 's/^    if(rex.seg \&\& !seg_done) {$/&\n        scratch = (hint>0 \&\& !IS_GPR(hint)) ? hint : x2;/' "$GETED"
+grep -qx '        scratch = (hint>0 && !IS_GPR(hint)) ? hint : x2;' "$GETED" || { echo "geted patch failed" >&2; exit 1; }
 # The page fault error code an x86 SIGSEGV handler gets says "write" only when the x86 instruction
 # at RIP writes. When the fault is in a wrapped native function (memcpy into a page the program
 # write-protected to track changes), that instruction is the call: the handler saw a read, left the
