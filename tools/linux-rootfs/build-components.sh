@@ -28,7 +28,10 @@ apt-get build-dep -y mesa
 echo "::endgroup::"
 
 echo "::group::Box64 $BOX64_REF"
-git clone --depth 1 --branch "$BOX64_REF" "$BOX64_REPO" "$SRC/box64"
+# BOX64_REF can be a commit (what releases pin), which git clone --branch doesn't take
+git init -q "$SRC/box64"
+git -C "$SRC/box64" fetch -q --depth 1 "$BOX64_REPO" "$BOX64_REF"
+git -C "$SRC/box64" checkout -q FETCH_HEAD
 # glibc functions Box64 doesn't forward yet: x86 programs built against a recent glibc (Nix
 # bundles) jump to the unresolved symbol and crash when they call one. Each takes the signature of
 # the function it mirrors (memset, __memset_chk, explicit_bzero, strlcpy, strsignal...); sigqueue
