@@ -47,6 +47,7 @@ public class TouchpadView extends View {
     private Runnable fourFingersTapCallback;
     private final float[] xform = XForm.getInstance();
     private boolean simTouchScreen = false;
+    private boolean touchscreenMode = false;
     private boolean continueClick = true;
     private int lastTouchedPosX;
     private int lastTouchedPosY;
@@ -161,16 +162,17 @@ public class TouchpadView extends View {
         }
     }
 
-//    public void setTouchscreenMode(boolean isTouchscreenMode) {
-//        this.isTouchscreenMode = isTouchscreenMode;
-//    }
+    /** Touch clicks where the finger is, like the "touchscreen_toggle" preference (used by Linux mode) */
+    public void setTouchscreenMode(boolean touchscreenMode) {
+        this.touchscreenMode = touchscreenMode;
+    }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         // If mouse is disabled, ignore all input
         if (!mouseEnabled) return true;
         
-        boolean isTouchscreenMode = preferences.getBoolean("touchscreen_toggle", false);
+        boolean isTouchscreenMode = touchscreenMode || preferences.getBoolean("touchscreen_toggle", false);
 
         // Reset the timeout timer to keep controls visible
         resetTouchscreenTimeout();  // <-- Ensure the controls stay visible

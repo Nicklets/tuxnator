@@ -1332,6 +1332,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
         touchpadView = new TouchpadView(this, xServer, timeoutHandler, hideControlsRunnable);
         touchpadView.setSensitivity(globalCursorSpeed);
         touchpadView.setMouseEnabled(!isMouseDisabled);
+        // Linux desktops and games are made for a pointer that goes where you touch: in touchpad
+        // mode the Linux desktop shows no cursor and taps seem to do nothing
+        touchpadView.setTouchscreenMode(isLinuxMode());
         touchpadView.setFourFingersTapCallback(() -> {
             if (!drawerLayout.isDrawerOpen(GravityCompat.START))
                 drawerLayout.openDrawer(GravityCompat.START);
