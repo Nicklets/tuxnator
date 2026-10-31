@@ -4,6 +4,17 @@
 export XDG_CURRENT_DESKTOP=LXDE XDG_SESSION_DESKTOP=LXDE DESKTOP_SESSION=LXDE
 
 mkdir -p "$HOME/Desktop"
+# PCManFM reads the desktop settings only from the home directory and otherwise draws black
+items="$HOME/.config/pcmanfm/default/desktop-items-0.conf"
+if [ ! -e "$items" ]; then
+    mkdir -p "${items%/*}" && cp /etc/xdg/pcmanfm/default/desktop-items-0.conf "$items"
+fi
+# First session: a terminal on the desktop, so there is something to start from. Only once, so
+# deleting it sticks.
+if [ ! -e "$HOME/.config/tuxnator/desktop-ready" ]; then
+    cp /usr/share/applications/lxterminal.desktop "$HOME/Desktop/" 2>/dev/null
+    mkdir -p "$HOME/.config/tuxnator" && touch "$HOME/.config/tuxnator/desktop-ready"
+fi
 openbox &
 wm=$!
 # The panel and the desktop want the window manager's EWMH properties on the root window

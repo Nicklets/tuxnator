@@ -150,6 +150,13 @@ for sym in execve execvp posix_spawn posix_spawnp; do
     nm -D --defined-only "$STAGING/usr/lib/winlator/libbox64exec.so" | grep -q " T $sym\$" \
         || { echo "libbox64exec.so does not export $sym" >&2; exit 1; }
 done
+# Terminal attributes through the ioctls Android allows on a pty (see the source)
+gcc -O2 -shared -fPIC -fvisibility=hidden -Wall -Wextra \
+    -o "$STAGING/usr/lib/winlator/libtermios-compat.so" "$HERE/shims/termios.c" -ldl
+for sym in tcgetattr tcsetattr isatty ttyname ttyname_r; do
+    nm -D --defined-only "$STAGING/usr/lib/winlator/libtermios-compat.so" | grep -q " T $sym\$" \
+        || { echo "libtermios-compat.so does not export $sym" >&2; exit 1; }
+done
 echo "::endgroup::"
 
 echo "::group::Desktop session and defaults"
