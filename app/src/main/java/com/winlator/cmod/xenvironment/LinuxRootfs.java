@@ -39,8 +39,8 @@ public class LinuxRootfs {
      */
     public static final int RELEASE_VERSION = 16;
     public static final String RELEASE_URL = "https://github.com/Nicklets/tuxnator/releases/download/linux-rootfs-16/linux-rootfs-16.tar.zst";
-    public static final String RELEASE_SHA256 = "";
-    // Extracted size of v16 is about 850 MB; the old rootfs stays in place until the new one is ready
+    public static final String RELEASE_SHA256 = "ffea557b3a9ca59d094f21dc832b987dbf96709f7cc6e33cdf6414e62ae0e997";
+    // Extracted size of v16 is about 830 MB; the old rootfs stays in place until the new one is ready
     private static final long INSTALL_SPACE_NEEDED = 1200L << 20;
 
     public interface ProgressListener {
