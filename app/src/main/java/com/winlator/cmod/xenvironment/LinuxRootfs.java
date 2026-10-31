@@ -37,10 +37,10 @@ public class LinuxRootfs {
      * The rootfs this build of the app is made for: the GitHub release that linux-rootfs.yml
      * publishes. The hash is pinned here, so a replaced release asset can't be installed.
      */
-    public static final int RELEASE_VERSION = 16;
-    public static final String RELEASE_URL = "https://github.com/Nicklets/tuxnator/releases/download/linux-rootfs-16/linux-rootfs-16.tar.zst";
-    public static final String RELEASE_SHA256 = "ffea557b3a9ca59d094f21dc832b987dbf96709f7cc6e33cdf6414e62ae0e997";
-    // Extracted size of v16 is about 830 MB; the old rootfs stays in place until the new one is ready
+    public static final int RELEASE_VERSION = 17;
+    public static final String RELEASE_URL = "https://github.com/Nicklets/tuxnator/releases/download/linux-rootfs-17/linux-rootfs-17.tar.zst";
+    public static final String RELEASE_SHA256 = "2755e124f8d580114a36ed34e7533bfd4459dbec8a197ddd27b9c366722e89f2";
+    // Extracted size of v17 is about 830 MB; the old rootfs stays in place until the new one is ready
     private static final long INSTALL_SPACE_NEEDED = 1200L << 20;
 
     public interface ProgressListener {
