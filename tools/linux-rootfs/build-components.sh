@@ -51,6 +51,30 @@ GETED="$SRC/box64/src/dynarec/arm64/dynarec_arm64_helper.c"
 grep -qx '    if(rex.seg && !seg_done) {' "$GETED" || { echo "segment block not found in $GETED" >&2; exit 1; }
 sed -i 's/^    if(rex.seg \&\& !seg_done) {$/&\n        scratch = (hint>0 \&\& hint<xRAX) ? hint : x2;/' "$GETED"
 grep -qx '        scratch = (hint>0 && hint<xRAX) ? hint : x2;' "$GETED" || { echo "geted patch failed" >&2; exit 1; }
+# The page fault error code an x86 SIGSEGV handler gets says "write" only when the x86 instruction
+# at RIP writes. When the fault is in a wrapped native function (memcpy into a page the program
+# write-protected to track changes), that instruction is the call: the handler saw a read, left the
+# page protected, and memcpy faulted again forever (SacredFire stuck loading). On arm64 the
+# kernel's ESR tells whether the native access was a write.
+SIGNALS="$SRC/box64/src/libtools/signals.c"
+WRITE_OPCODE='if(write_opcode(sigcontext->uc_mcontext.gregs\[X64_RIP\], (uintptr_t)pc, (R_CS==0x23)))'
+grep -q "^ *$WRITE_OPCODE\$" "$SIGNALS" || { echo "write_opcode call not found in $SIGNALS" >&2; exit 1; }
+cat > "$SRC/esr-write.c" <<'EOF'
+#if defined(DYNAREC) && defined(__aarch64__)
+            if(p) {
+                struct _aarch64_ctx* ff = (struct _aarch64_ctx*)p->uc_mcontext.__reserved;
+                while(ff->magic && ff->size && ff->magic!=ESR_MAGIC)
+                    ff = (struct _aarch64_ctx*)((uintptr_t)ff + ff->size);
+                uint64_t esr = (ff->magic==ESR_MAGIC) ? ((struct esr_context*)ff)->esr : 0;
+                // Data abort from EL0 with WnR set, not a cache maintenance operation
+                if((esr>>26)==0x24 && (esr&(1<<6)) && !(esr&(1<<8)))
+                    sigcontext->uc_mcontext.gregs[X64_ERR] |= 2;
+            }
+#endif
+EOF
+sed -i "/^ *$WRITE_OPCODE\$/{n;r $SRC/esr-write.c
+}" "$SIGNALS"
+grep -q 'ff->magic!=ESR_MAGIC' "$SIGNALS" || { echo "ESR patch failed" >&2; exit 1; }
 # shellcheck disable=SC2086
 cmake -S "$SRC/box64" -B "$SRC/box64/build" $BOX64_CMAKE_FLAGS
 cmake --build "$SRC/box64/build" -j "$JOBS"
