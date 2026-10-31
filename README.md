@@ -60,10 +60,13 @@ Já testados: SuperTuxKart (jogável com toque, controle virtual e som), apps GT
 
 - [Winlator](https://github.com/brunodev85/winlator) de brunodev85 e
   [Winlator Ludashi](https://github.com/StevenMXZ/Winlator-Ludashi) de StevenMX e pipetto-crypto
-- [Box64](https://github.com/ptitSeb/box64) de ptitSeb
-- [Mesa](https://www.mesa3d.org) (Turnip e Zink)
+- [Box86](https://github.com/ptitSeb/box86) e [Box64](https://github.com/ptitSeb/box64) de ptitSeb: rodam os
+  programas x86 e x86_64
+- [FEX-Emu](https://github.com/FEX-Emu/FEX): emulador x86 e x86_64 usado no modo Windows
+- [Mesa](https://www.mesa3d.org): drivers Turnip (Vulkan para Adreno), de Danylo Piliaiev e da equipe do
+  Freedreno, e Zink (OpenGL sobre Vulkan)
 - [PRoot](https://proot-me.github.io)
 - [Debian](https://www.debian.org)
-- Wine, DXVK, VKD3D, D8VK, CNC DDraw, dxwrapper, FEX-Emu e libadrenotools, usados no modo Windows
+- Wine, DXVK, VKD3D, D8VK, CNC DDraw, dxwrapper e libadrenotools, usados no modo Windows
 
 Licença MIT (veja [LICENSE](LICENSE)). Os componentes de terceiros seguem as próprias licenças.
