@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Publish a GitHub release with this tag (e.g. linux-rootfs-1). Empty = artifact only."
+        description: "Create a draft GitHub release with this tag (e.g. linux-rootfs-1). Empty = artifact only."
         required: false
         default: ""
       include_sources:
@@ -51,7 +51,8 @@ jobs:
         run: |
           . tools/linux-rootfs/config.env
           bash tools/linux-rootfs/fetch-sources.sh "$WORK/out/linux-rootfs-$ROOTFS_VERSION.packages.tsv" "$WORK/out/sources"
-          tar -C "$WORK/out" -cf "$WORK/out/linux-rootfs-$ROOTFS_VERSION-sources.tar" sources
+          # GitHub release assets are limited to 2 GiB: rejoin with cat linux-rootfs-N-sources.tar.part-* | tar -x
+          tar -C "$WORK/out" -cf - sources | split -b 1900M - "$WORK/out/linux-rootfs-$ROOTFS_VERSION-sources.tar.part-"
           rm -rf "$WORK/out/sources"
 
       - name: Upload rootfs
@@ -106,5 +107,6 @@ jobs:
             cat "$manifest"
             echo '```'
           } > notes.md
+          # A draft, published by hand after review: the app pins this file's hash (LinuxRootfs.RELEASE_SHA256)
           gh release create "$TAG" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "$TAG" --notes-file notes.md
+            --title "$TAG" --notes-file notes.md --draft

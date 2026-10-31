@@ -1,43 +1,69 @@
-<p align="center">
-	<img src="logo.png" width="376" height="128" alt="Winlator Logo" />  
-</p>
+# Tuxnator
 
-# Winlator
+O Tuxnator roda programas e jogos **Linux** no Android: Debian arm64 com PRoot, Box64 para programas x86_64 e
+Mesa Turnip/Zink para Vulkan e OpenGL em GPUs Adreno. Ele nasceu de um fork do
+[Winlator Ludashi](https://github.com/StevenMXZ/Winlator-Ludashi) e continua rodando programas Windows com
+Wine como o Winlator.
 
-Winlator is an Android application that lets you to run Windows (x86_64) applications with Wine and Box86/Box64.
+> **Beta.** Funciona no aparelho em que foi desenvolvido (Snapdragon 8 Gen 1). Em outros aparelhos ainda é
+> pouco testado: relatos em [Issues](https://github.com/Nicklets/tuxnator/issues) ajudam muito.
 
-# Installation
+## Requisitos
 
-1. Download and install the APK (Winlator_7.1.apk) from [GitHub Releases](https://github.com/brunodev85/winlator/releases)
-2. Launch the app and wait for the installation process to finish
+- Android 8 ou mais novo, arm64
+- GPU Adreno (Snapdragon) para os drivers Turnip. Outras GPUs só têm o driver do sistema, mais lento.
+- Cerca de 1,2 GB livres para o sistema Debian, além do espaço dos jogos
 
-----
+## Instalação
 
-[![Play on Youtube](https://img.youtube.com/vi/8PKhmT7B3Xo/1.jpg)](https://www.youtube.com/watch?v=8PKhmT7B3Xo)
-[![Play on Youtube](https://img.youtube.com/vi/9E4wnKf2OsI/2.jpg)](https://www.youtube.com/watch?v=9E4wnKf2OsI)
-[![Play on Youtube](https://img.youtube.com/vi/czEn4uT3Ja8/2.jpg)](https://www.youtube.com/watch?v=czEn4uT3Ja8)
-[![Play on Youtube](https://img.youtube.com/vi/eD36nxfT_Z0/2.jpg)](https://www.youtube.com/watch?v=eD36nxfT_Z0)
+1. Baixe o `Tuxnator-<versão>.apk` em [Releases](https://github.com/Nicklets/tuxnator/releases) e instale.
+   Ele não substitui o Winlator: os dois podem ficar instalados juntos.
+2. Abra o app e espere a preparação inicial terminar.
+3. Em **Configurações > Contêiner Linux**, toque em **Instalar**. O app baixa o sistema Debian (cerca de
+   200 MB), confere o hash SHA-256 e instala.
 
-----
+## Uso
 
-# Useful Tips
+- **Área de trabalho Linux** (Configurações > Contêiner Linux): gerenciador de arquivos, barra de tarefas e
+  terminal. Dali dá para abrir AppImages e programas Linux com dois toques.
+- **Pastas compartilhadas**: o Linux só acessa os arquivos do próprio app e as pastas que você escolher nessa
+  mesma tela. Elas aparecem em `Android` na área de trabalho.
+- **Atalhos**: um atalho `.desktop` cujo `Exec=` aponta para um programa Linux roda no modo Linux, com os
+  controles virtuais e perfis de teclado do Winlator.
+- Renderizador (Vulkan ou OpenGL), driver Turnip e precisão do Box64 ficam na mesma tela.
 
-- If you are experiencing performance issues, try changing the Box86/Box64 preset in Container Settings -> Advanced Tab.
-- For applications that use .NET Framework, try installing Wine Mono found in Start Menu -> System Tools.
-- If some older games don't open, try adding the environment variable MESA_EXTENSION_MAX_YEAR=2003 in Container Settings -> Environment Variables.
-- Try running the games using the shortcut on the Winlator home screen, there you can define individual settings for each game.
-- To speed up the installers, try changing the Box86/Box64 preset to Intermediate in Container Settings -> Advanced Tab.
+Já testados: SuperTuxKart (jogável com toque, controle virtual e som), apps GTK3/GTK4 e AppImages x86_64.
 
-# Credits and Third-party apps
-- Ubuntu RootFs ([Focal Fossa](https://releases.ubuntu.com/focal))
-- Wine ([winehq.org](https://www.winehq.org/))
-- Box86/Box64 by [ptitseb](https://github.com/ptitSeb)
-- PRoot ([proot-me.github.io](https://proot-me.github.io))
-- Mesa (Turnip/Zink/VirGL) ([mesa3d.org](https://www.mesa3d.org))
-- DXVK ([github.com/doitsujin/dxvk](https://github.com/doitsujin/dxvk))
-- VKD3D ([gitlab.winehq.org/wine/vkd3d](https://gitlab.winehq.org/wine/vkd3d))
-- D8VK ([github.com/AlpyneDreams/d8vk](https://github.com/AlpyneDreams/d8vk))
-- CNC DDraw ([github.com/FunkyFr3sh/cnc-ddraw](https://github.com/FunkyFr3sh/cnc-ddraw))
+## Limitações conhecidas
 
-Many thanks to [ptitSeb](https://github.com/ptitSeb) (Box86/Box64), [Danylo](https://blogs.igalia.com/dpiliaiev/tags/mesa/) (Turnip), [alexvorxx](https://github.com/alexvorxx) (Mods/Tips) and others.
-Thank you to all the people who believe in this project.
+- O servidor X é o do Winlator, em Java. Ainda faltam as extensões RENDER, SHAPE e XKB: programas que exigem
+  alguma delas podem não abrir.
+- Atualizar o sistema Debian troca ele inteiro: pacotes instalados com `apt` se perdem. A pasta pessoal fica.
+- Jogos x86_64 pesados esquentam o aparelho; jogue com o celular carregado.
+
+## Compilar
+
+- APK: `./gradlew assembleRelease` (veja [.github/workflows/build.yml](.github/workflows/build.yml) para as
+  dependências nativas). Releases são assinadas com a chave do projeto, guardada nos secrets do GitHub.
+- Sistema Debian: [.github/workflows/linux-rootfs.yml](.github/workflows/linux-rootfs.yml). As versões de
+  Debian, Box64 e Mesa ficam em [tools/linux-rootfs/config.env](tools/linux-rootfs/config.env).
+
+## Código-fonte de terceiros
+
+- **Debian**: cada release `linux-rootfs-N` traz a lista de pacotes e o código-fonte Debian correspondente
+  (`linux-rootfs-N-sources.tar.part-*`; junte com `cat linux-rootfs-N-sources.tar.part-* | tar -x`).
+- **Box64 e Mesa**: o `manifest.json` de cada release `linux-rootfs-N` traz o commit usado. Os patches estão em
+  [tools/linux-rootfs/build-components.sh](tools/linux-rootfs/build-components.sh).
+- **PRoot**: compilado de [app/src/main/cpp/proot](app/src/main/cpp/proot).
+
+## Créditos
+
+- [Winlator](https://github.com/brunodev85/winlator) de brunodev85 e
+  [Winlator Ludashi](https://github.com/StevenMXZ/Winlator-Ludashi) de StevenMX e pipetto-crypto
+- [Box64](https://github.com/ptitSeb/box64) de ptitSeb
+- [Mesa](https://www.mesa3d.org) (Turnip e Zink)
+- [PRoot](https://proot-me.github.io)
+- [Debian](https://www.debian.org)
+- Wine, DXVK, VKD3D, D8VK, CNC DDraw, dxwrapper, FEX-Emu e libadrenotools, usados no modo Windows
+
+Licença MIT (veja [LICENSE](LICENSE)). Os componentes de terceiros seguem as próprias licenças.

@@ -46,7 +46,7 @@ internal fun ClassicCoreStatusCard(readyState: State<Boolean>, progressState: St
             }
             Spacer(Modifier.size(14.dp))
             Text(
-                if (ready) "Winlator core is ready" else "Preparing Winlator core in the background",
+                if (ready) "Tuxnator core is ready" else "Preparing Tuxnator core in the background",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

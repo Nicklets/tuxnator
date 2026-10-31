@@ -491,12 +491,13 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             final PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
 
             TextView tvWebpage = dialog.findViewById(R.id.TVWebpage);
-            tvWebpage.setText(Html.fromHtml("<a href=\"https://www.winlator.org\">winlator.org</a>", Html.FROM_HTML_MODE_LEGACY));
+            tvWebpage.setText(Html.fromHtml("<a href=\"https://github.com/Nicklets/tuxnator\">github.com/Nicklets/tuxnator</a>", Html.FROM_HTML_MODE_LEGACY));
             tvWebpage.setMovementMethod(LinkMovementMethod.getInstance());
 
             ((TextView) dialog.findViewById(R.id.TVAppVersion)).setText(getString(R.string.version) + " " + pInfo.versionName);
 
             String creditsAndThirdPartyAppsHTML = String.join("<br />",
+                    "Based on Winlator by brunodev85 (<a href=\"https://github.com/brunodev85/winlator\">github.com/brunodev85/winlator</a>)",
                     "Winlator Ludashi by StevenMX, pipetto-crypto (<a href=\"https://github.com/StevenMXZ/Winlator-Ludashi\">Fork</a>, <a href=\"https://github.com/Pipetto-crypto/winlator\">Fork</a>)",
                     "Big Picture Mode Music by",
                     "Dale Melvin Blevens III (Fumer)",
@@ -504,6 +505,8 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                     "Termux Package(<a href=\"https://github.com/termux/termux-packages\">github.com/termux/termux-package</a>)",
                     "Wine (<a href=\"https://www.winehq.org\">winehq.org</a>)",
                     "Box64 (<a href=\"https://github.com/ptitSeb/box64\">github.com/ptitSeb/box64</a>)",
+                    "PRoot (<a href=\"https://proot-me.github.io\">proot-me.github.io</a>)",
+                    "Debian (<a href=\"https://www.debian.org\">debian.org</a>)",
                     "Mesa (Turnip/Zink/Wrapper) (<a href=\"https://github.com/xMeM/mesa/tree/wrapper\">github.com/xMeM/mesa</a>)",
                     "DXVK (<a href=\"https://github.com/doitsujin/dxvk\">github.com/doitsujin/dxvk</a>)",
                     "VKD3D (<a href=\"https://gitlab.winehq.org/wine/vkd3d\">gitlab.winehq.org/wine/vkd3d</a>)",

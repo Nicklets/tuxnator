@@ -2,6 +2,11 @@ name: Android CI Bionic
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Create a draft pre-release with this tag (e.g. v0.1-beta). Empty = artifact only."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -45,12 +50,46 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # Android installs an update only when it is signed with the same key as the installed app,
+      # so releases need the Tuxnator key; without it the APK gets the runner's throwaway debug key
+      - name: Set up release key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.TUXNATOR_KEYSTORE_BASE64 }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            [ -z "$RELEASE_TAG" ] || { echo "::error::A release needs the TUXNATOR_KEYSTORE_BASE64 secret"; exit 1; }
+            echo "::warning::TUXNATOR_KEYSTORE_BASE64 is not set: signing with a throwaway debug key"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/tuxnator.jks"
+          echo "TUXNATOR_KEYSTORE=$RUNNER_TEMP/tuxnator.jks" >> "$GITHUB_ENV"
+
       - name: Build with Gradle
+        env:
+          TUXNATOR_KEYSTORE_PASSWORD: ${{ secrets.TUXNATOR_KEYSTORE_PASSWORD }}
         run: ./gradlew assembleRelease
+
+      - name: Name the APK
+        run: |
+          version="$(sed -n 's/^ *versionName "\(.*\)"$/\1/p' app/build.gradle)"
+          mkdir -p dist
+          cp app/build/outputs/apk/release/*.apk "dist/Tuxnator-$version.apk"
+          (cd dist && sha256sum *.apk > "Tuxnator-$version.apk.sha256")
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Bionic-Build-${{ github.run_number }}
-          path: app/build/outputs/apk/release/*.apk
+          name: Tuxnator-${{ github.run_number }}
+          path: dist/
           if-no-files-found: error
+
+      - name: Create draft release
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          # Notes are written in the release page before it is published
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Tuxnator $TAG" --notes "" --draft --prerelease

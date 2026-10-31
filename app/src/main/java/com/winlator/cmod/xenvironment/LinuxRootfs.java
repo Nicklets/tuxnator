@@ -17,6 +17,9 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,8 +33,22 @@ public class LinuxRootfs {
     private static final String TAG = "LinuxRootfs";
     private static final String VERSION_FILE = "etc/winlator-rootfs-version";
 
+    /**
+     * The rootfs this build of the app is made for: the GitHub release that linux-rootfs.yml
+     * publishes. The hash is pinned here, so a replaced release asset can't be installed.
+     */
+    public static final int RELEASE_VERSION = 16;
+    public static final String RELEASE_URL = "https://github.com/Nicklets/tuxnator/releases/download/linux-rootfs-16/linux-rootfs-16.tar.zst";
+    public static final String RELEASE_SHA256 = "";
+    // Extracted size of v16 is about 850 MB; the old rootfs stays in place until the new one is ready
+    private static final long INSTALL_SPACE_NEEDED = 1200L << 20;
+
     public interface ProgressListener {
         void onProgress(String message);
+    }
+
+    public interface DownloadListener {
+        void onDownload(long downloaded, long total);
     }
 
     private final File rootDir;
@@ -68,6 +85,77 @@ public class LinuxRootfs {
         }
         catch (Exception e) {
             return 0;
+        }
+    }
+
+    public boolean isUpToDate() {
+        return getVersion() >= RELEASE_VERSION;
+    }
+
+    /** Downloads the release rootfs (RELEASE_URL) and installs it. Runs on the calling thread. */
+    public boolean installRelease(DownloadListener downloadListener, ProgressListener listener) {
+        if (RELEASE_SHA256.isEmpty()) {
+            report(listener, "This build has no pinned rootfs hash");
+            return false;
+        }
+        File parent = rootDir.getParentFile();
+        parent.mkdirs();
+        File archive = new File(parent, "linux-rootfs-" + RELEASE_VERSION + ".tar.zst");
+        try {
+            if (!download(RELEASE_URL, archive, parent, downloadListener, listener)) return false;
+            return install(archive, RELEASE_SHA256, listener);
+        }
+        finally {
+            archive.delete();
+        }
+    }
+
+    private static boolean download(String url, File destination, File volume, DownloadListener downloadListener, ProgressListener listener) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection)new URL(url).openConnection();
+            connection.setConnectTimeout(30000);
+            connection.setReadTimeout(60000);
+            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                report(listener, "Download failed: HTTP " + connection.getResponseCode());
+                return false;
+            }
+
+            long total = connection.getContentLengthLong();
+            if (volume.getUsableSpace() < Math.max(total, 0) + INSTALL_SPACE_NEEDED) {
+                report(listener, "Not enough free space: " + ((Math.max(total, 0) + INSTALL_SPACE_NEEDED) >> 20) + " MB needed");
+                return false;
+            }
+
+            try (InputStream in = new BufferedInputStream(connection.getInputStream(), StreamUtils.BUFFER_SIZE);
+                 OutputStream out = new BufferedOutputStream(new FileOutputStream(destination), StreamUtils.BUFFER_SIZE)) {
+                byte[] buffer = new byte[StreamUtils.BUFFER_SIZE];
+                long downloaded = 0;
+                long lastReport = 0;
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                    downloaded += read;
+                    if (downloadListener != null && downloaded - lastReport >= (1 << 20)) {
+                        downloadListener.onDownload(downloaded, total);
+                        lastReport = downloaded;
+                    }
+                }
+                if (total > 0 && downloaded != total) {
+                    report(listener, "Download incomplete: " + downloaded + " of " + total + " bytes");
+                    return false;
+                }
+                if (downloadListener != null) downloadListener.onDownload(downloaded, total);
+            }
+            return true;
+        }
+        catch (IOException e) {
+            Log.e(TAG, "Download failed", e);
+            report(listener, "Download failed: " + e.getMessage());
+            return false;
+        }
+        finally {
+            if (connection != null) connection.disconnect();
         }
     }
 

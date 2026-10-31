@@ -97,13 +97,13 @@ android {
     buildToolsVersion "35.0.0"
 
     defaultConfig {
-        applicationId "com.winlator.cmod"
+        applicationId "io.github.nicklets.tuxnator"
         minSdkVersion 26
         // We’re preserving Winlator’s request to keep targetSdkVersion at 28
         targetSdkVersion 28
 
-        versionCode 20
-        versionName "4.0"
+        versionCode 1
+        versionName "0.1-beta"
 
         // External native build from Winlator
         externalNativeBuild {
@@ -132,6 +132,21 @@ android {
         freeCompilerArgs += ['-opt-in=androidx.compose.material3.ExperimentalMaterial3Api']
     }
 
+    // Releases are signed with the Tuxnator key from the CI secrets (see .github/workflows/build.yml):
+    // Android only installs an update signed with the same key. Local builds fall back to the debug key.
+    def releaseKeystore = System.getenv("TUXNATOR_KEYSTORE")
+    signingConfigs {
+        if (releaseKeystore) {
+            release {
+                storeFile file(releaseKeystore)
+                // PKCS12 keystore (keytool's default): the key shares the store password
+                storePassword System.getenv("TUXNATOR_KEYSTORE_PASSWORD")
+                keyAlias "tuxnator"
+                keyPassword System.getenv("TUXNATOR_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     // Keep Winlator’s buildTypes
     buildTypes {
         debug {
@@ -139,7 +154,7 @@ android {
         }
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig releaseKeystore ? signingConfigs.release : signingConfigs.debug
             crunchPngs false
         }
     }

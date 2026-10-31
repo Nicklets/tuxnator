@@ -1,9 +1,12 @@
 package com.winlator.cmod.ui.settings
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,16 +38,20 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.winlator.cmod.XServerDisplayActivity
@@ -88,8 +96,7 @@ class LinuxContainerSettingsActivity : AppCompatActivity() {
 
         settings = LinuxContainerSettings(this)
         sharedFolders.addAll(settings.sharedFolders)
-        val rootfs = LinuxRootfs.find(this)
-        val rootfsStatus = if (rootfs.isInstalled) "Rootfs Debian v${rootfs.version} instalado" else "Rootfs Debian não instalado"
+        if (!RootfsInstall.running) RootfsInstall.version = LinuxRootfs.find(this).version
 
         val adrenotools = AdrenotoolsManager(this)
         // Drivers shipped in the APK (extracted on first use) plus the ones the user installed
@@ -111,7 +118,7 @@ class LinuxContainerSettingsActivity : AppCompatActivity() {
         setContent {
             WinZTheme {
                 LinuxContainerSettingsScreen(
-                    rootfsStatus = rootfsStatus,
+                    onInstallRootfs = { RootfsInstall.start(applicationContext) },
                     initialRenderer = settings.renderer,
                     initialDriver = settings.rendererDriverId,
                     initialBox64Preset = settings.box64Preset,
@@ -145,7 +152,7 @@ class LinuxContainerSettingsActivity : AppCompatActivity() {
     private fun openDesktop() {
         val rootfs = LinuxRootfs.find(this)
         if (!File(rootfs.rootDir, "usr/local/bin/tuxnator-desktop").isFile) {
-            Toast.makeText(this, "A área de trabalho precisa do rootfs v10 ou mais novo", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Instale o rootfs Debian primeiro", Toast.LENGTH_LONG).show()
             return
         }
         val container = ContainerManager(this).containers.firstOrNull()
@@ -196,9 +203,51 @@ class LinuxContainerSettingsActivity : AppCompatActivity() {
     }
 }
 
+/** Download and install of the release rootfs. Lives in the process, so leaving the screen doesn't stop it. */
+private object RootfsInstall {
+    var version by mutableIntStateOf(0)
+    var running by mutableStateOf(false)
+    /** Download progress (0..1), or null while connecting, extracting or when the size is unknown */
+    var progress by mutableStateOf<Float?>(null)
+    var message by mutableStateOf<String?>(null)
+    var failed by mutableStateOf(false)
+
+    fun start(context: Context) {
+        if (running) return
+        running = true
+        failed = false
+        progress = null
+        message = "Conectando…"
+        val main = Handler(Looper.getMainLooper())
+        val rootfs = LinuxRootfs.find(context)
+        Thread {
+            var lastMessage = ""
+            val ok = rootfs.installRelease(
+                { done, total ->
+                    main.post {
+                        progress = if (total > 0) done.toFloat() / total else null
+                        message = if (total > 0) "Baixando: ${done shr 20} de ${total shr 20} MB" else "Baixando: ${done shr 20} MB"
+                    }
+                },
+                { msg ->
+                    lastMessage = msg
+                    main.post { progress = null; message = "Instalando…" }
+                }
+            )
+            main.post {
+                running = false
+                progress = null
+                version = rootfs.version
+                failed = !ok
+                message = if (ok) null else "Falhou: $lastMessage"
+            }
+        }.start()
+    }
+}
+
 @Composable
 private fun LinuxContainerSettingsScreen(
-    rootfsStatus: String,
+    onInstallRootfs: () -> Unit,
     initialRenderer: String,
     initialDriver: String,
     initialBox64Preset: String,
@@ -232,16 +281,54 @@ private fun LinuxContainerSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             item("status") {
+                val version = RootfsInstall.version
+                val status = RootfsInstall.message ?: when {
+                    version == 0 -> "Rootfs Debian não instalado"
+                    version < LinuxRootfs.RELEASE_VERSION -> "Rootfs Debian v$version instalado, v${LinuxRootfs.RELEASE_VERSION} disponível"
+                    else -> "Rootfs Debian v$version instalado"
+                }
+                val action = when {
+                    RootfsInstall.running -> null
+                    RootfsInstall.failed -> "Tentar de novo"
+                    version == 0 -> "Instalar"
+                    version < LinuxRootfs.RELEASE_VERSION -> "Atualizar"
+                    else -> null
+                }
+                // A phone that sleeps mid-download drops the connection
+                val view = LocalView.current
+                DisposableEffect(RootfsInstall.running) {
+                    view.keepScreenOn = RootfsInstall.running
+                    onDispose { view.keepScreenOn = false }
+                }
                 GroupCard {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         SmallIcon(Icons.Outlined.Terminal)
                         Spacer(Modifier.width(11.dp))
                         Column(Modifier.weight(1f)) {
                             Text("Modo Linux", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-                            Text(rootfsStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                status,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (RootfsInstall.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (action != null) {
+                            Spacer(Modifier.width(8.dp))
+                            FilledTonalButton(onClick = onInstallRootfs) { Text(action) }
                         }
                     }
+                    if (RootfsInstall.running) {
+                        val progress = RootfsInstall.progress
+                        val modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp)
+                        if (progress != null) LinearProgressIndicator(progress = { progress }, modifier = modifier)
+                        else LinearProgressIndicator(modifier = modifier)
+                    }
                 }
+            }
+            if (RootfsInstall.version in 1 until LinuxRootfs.RELEASE_VERSION) item("status-hint") {
+                Hint("Atualizar baixa cerca de 200 MB e troca o sistema Debian inteiro: pacotes instalados com apt se perdem. A pasta pessoal (home) e as pastas compartilhadas ficam.")
+            } else if (RootfsInstall.version == 0) item("status-hint") {
+                Hint("O modo Linux precisa de um sistema Debian com Box64 e drivers Turnip. Instalar baixa cerca de 200 MB e ocupa uns 850 MB.")
             }
 
             item("desktop-title") { SectionTitle("ÁREA DE TRABALHO") }
