@@ -7,6 +7,7 @@ import com.winlator.cmod.xconnector.RequestHandler;
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
+import com.winlator.cmod.xserver.errors.BadImplementation;
 import com.winlator.cmod.xserver.errors.BadRequest;
 import com.winlator.cmod.xserver.errors.XRequestError;
 import com.winlator.cmod.xserver.extensions.Extension;
@@ -521,6 +522,12 @@ public class XClientRequestHandler implements RequestHandler {
         catch (XRequestError e) {
             client.skipRequest();
             e.sendError(client, opcode);
+        }
+        catch (UnsupportedOperationException e) {
+            // A request this server can't do must fail for that client only, not take the app down
+            Log.w("XClientRequestHandler", "Opcode " + (opcode & 0xff) + ": " + e.getMessage());
+            client.skipRequest();
+            new BadImplementation().sendError(client, opcode);
         }
 
         return true;

@@ -6,6 +6,7 @@ import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
 import com.winlator.cmod.xserver.XClient;
+import com.winlator.cmod.xserver.errors.BadName;
 import com.winlator.cmod.xserver.errors.XRequestError;
 
 import java.io.IOException;
@@ -16,7 +17,8 @@ public abstract class FontRequests {
         int length = inputStream.readShort();
         inputStream.skip(2);
         String name = inputStream.readString8(length);
-        if (!name.equals("cursor")) throw new UnsupportedOperationException("OpenFont supports only name: cursor.");
+        // There are no core fonts: Xt/Xaw programs (xmessage...) get the error they expect for a missing one
+        if (!name.equals("cursor")) throw new BadName();
     }
 
     public static void listFonts(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
