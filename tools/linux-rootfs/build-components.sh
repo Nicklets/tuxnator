@@ -47,39 +47,6 @@ for wrap in "arc4random_buf, vFpL" "arc4random_uniform, uFu" "memset_explicit, p
     sed -i "/^\/\/ *GO[A-Z]*(${wrap%%,*},/d" "$LIBC_WRAPS"
     sed -i "/^GO(arc4random, uFv)\$/a GO($wrap)" "$LIBC_WRAPS"
 done
-# The dynarec computes FS:/GS:-disp(%reg) (negative disp under 4 KiB) with scratch pointing at the
-# guest's base register, then loads the segment base into scratch: the base register (RAX in
-# SacredFire's TLS accesses, after `mov $0,%rax`) ends up holding the FS base and the next access
-# lands at twice it. Give the segment base a real scratch register again (sent upstream as
-# ptitSeb/box64#4645; drop this once Box64 has it).
-GETED="$SRC/box64/src/dynarec/arm64/dynarec_arm64_helper.c"
-grep -qx '    if(rex.seg && !seg_done) {' "$GETED" || { echo "segment block not found in $GETED" >&2; exit 1; }
-sed -i 's/^    if(rex.seg \&\& !seg_done) {$/&\n        scratch = (hint>0 \&\& !IS_GPR(hint)) ? hint : x2;/' "$GETED"
-grep -qx '        scratch = (hint>0 && !IS_GPR(hint)) ? hint : x2;' "$GETED" || { echo "geted patch failed" >&2; exit 1; }
-# The page fault error code an x86 SIGSEGV handler gets says "write" only when the x86 instruction
-# at RIP writes. When the fault is in a wrapped native function (memcpy into a page the program
-# write-protected to track changes), that instruction is the call: the handler saw a read, left the
-# page protected, and memcpy faulted again forever (SacredFire stuck loading). On arm64 the
-# kernel's ESR tells whether the native access was a write.
-SIGNALS="$SRC/box64/src/libtools/signals.c"
-WRITE_OPCODE='if(write_opcode(sigcontext->uc_mcontext.gregs\[X64_RIP\], (uintptr_t)pc, (R_CS==0x23)))'
-grep -q "^ *$WRITE_OPCODE\$" "$SIGNALS" || { echo "write_opcode call not found in $SIGNALS" >&2; exit 1; }
-cat > "$SRC/esr-write.c" <<'EOF'
-#if defined(DYNAREC) && defined(__aarch64__)
-            if(p) {
-                struct _aarch64_ctx* ff = (struct _aarch64_ctx*)p->uc_mcontext.__reserved;
-                while(ff->magic && ff->size && ff->magic!=ESR_MAGIC)
-                    ff = (struct _aarch64_ctx*)((uintptr_t)ff + ff->size);
-                uint64_t esr = (ff->magic==ESR_MAGIC) ? ((struct esr_context*)ff)->esr : 0;
-                // Data abort from EL0 with WnR set, not a cache maintenance operation
-                if((esr>>26)==0x24 && (esr&(1<<6)) && !(esr&(1<<8)))
-                    sigcontext->uc_mcontext.gregs[X64_ERR] |= 2;
-            }
-#endif
-EOF
-sed -i "/^ *$WRITE_OPCODE\$/{n;r $SRC/esr-write.c
-}" "$SIGNALS"
-grep -q 'ff->magic!=ESR_MAGIC' "$SIGNALS" || { echo "ESR patch failed" >&2; exit 1; }
 # Like ld.so, which a static binary never runs, don't load BOX64_LD_PRELOAD libraries into one:
 # Box64 did, and the static nix-appimage wrapper of SacredFire crashed at its first instruction.
 # The variable stays set for the dynamic programs it starts.
