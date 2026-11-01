@@ -146,6 +146,11 @@ public class LinuxProgramLauncherComponent extends EnvironmentComponent {
             preload += ":/usr/lib/winlator/libbox64exec.so";
         }
         launcher.putEnv("LD_PRELOAD", preload);
+        // x86 libraries that Box64 emulates (an AppImage's own SDL) don't go through the native
+        // shim: give them an x86 libfakeinput too (rootfs v19+)
+        if (new File(rootfs.getRootDir(), "usr/lib/winlator/x86_64/libfakeinput.so").isFile()) {
+            launcher.putEnv("BOX64_LD_PRELOAD", "/usr/lib/winlator/x86_64/libfakeinput.so");
+        }
         // The X server's XInput2 only reports raw events, and GTK3/Qt take their pointer and
         // keyboard input from XI2 device events: have them use core events instead
         launcher.putEnv("GDK_CORE_DEVICE_EVENTS", "1");

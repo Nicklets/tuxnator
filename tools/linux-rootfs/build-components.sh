@@ -23,7 +23,8 @@ sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sourc
 apt-get update
 apt-get install -y --no-install-recommends \
     build-essential cmake git ca-certificates python3 pkg-config file \
-    meson ninja-build glslang-tools python3-mako python3-yaml python3-packaging python3-ply libudev-dev
+    meson ninja-build glslang-tools python3-mako python3-yaml python3-packaging python3-ply libudev-dev \
+    g++-x86-64-linux-gnu
 apt-get build-dep -y mesa
 echo "::endgroup::"
 
@@ -140,6 +141,17 @@ g++ -O2 -shared -fPIC -fvisibility=hidden -Wall -Wextra \
 for sym in open openat stat scandir ioctl inotify_add_watch; do
     nm -D --defined-only "$STAGING/usr/lib/winlator/libfakeinput.so" | grep -q " T $sym\$" \
         || { echo "libfakeinput.so does not export $sym" >&2; exit 1; }
+done
+# The same for x86 programs whose libraries Box64 emulates (an AppImage's own SDL3): the native
+# shim never sees their libc calls, so they found no gamepad. Box64 preloads this one into them.
+# libstdc++ is linked in so every x86 process doesn't pull an x86 libstdc++ just for it.
+mkdir -p "$STAGING/usr/lib/winlator/x86_64"
+x86_64-linux-gnu-g++ -O2 -shared -fPIC -fvisibility=hidden -Wall -Wextra -static-libstdc++ -static-libgcc \
+    -o "$STAGING/usr/lib/winlator/x86_64/libfakeinput.so" \
+    "$REPO_ROOT/app/src/main/cpp/winlator/fakeinput.cpp" -ldl -lpthread
+for sym in open openat stat scandir ioctl inotify_add_watch; do
+    x86_64-linux-gnu-nm -D --defined-only "$STAGING/usr/lib/winlator/x86_64/libfakeinput.so" | grep -q " T $sym\$" \
+        || { echo "x86_64 libfakeinput.so does not export $sym" >&2; exit 1; }
 done
 # Silent udev monitors, since Android doesn't allow the netlink socket (see the source)
 gcc -O2 -shared -fPIC -fvisibility=hidden -Wall -Wextra \
