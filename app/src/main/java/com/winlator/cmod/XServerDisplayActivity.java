@@ -209,6 +209,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private boolean isPaused = false;
     private boolean isRelativeMouseMovement = false;
     private boolean isMouseDisabled = false;
+    private boolean isTouchscreenMode = false;
     private boolean simulateTouchScreen = false;
 
     private SensorManager sensorManager;
@@ -1096,6 +1097,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
         return linuxExecutable != null || linuxRootfsCommand != null;
     }
 
+    private String touchscreenModePreference() {
+        return isLinuxMode() ? "linux_touchscreen_mode" : "touchscreen_toggle";
+    }
+
     private void setupXEnvironment() throws PackageManager.NameNotFoundException {
 
         envVars.put("LC_ALL", lc_all);
@@ -1332,9 +1337,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
         touchpadView = new TouchpadView(this, xServer, timeoutHandler, hideControlsRunnable);
         touchpadView.setSensitivity(globalCursorSpeed);
         touchpadView.setMouseEnabled(!isMouseDisabled);
-        // Linux desktops and games are made for a pointer that goes where you touch: in touchpad
-        // mode the Linux desktop shows no cursor and taps seem to do nothing
-        touchpadView.setTouchscreenMode(isLinuxMode());
+        // Linux desktops and games are made for a pointer that goes where you touch, so Linux mode
+        // starts in touchscreen mode; each mode remembers what the sidebar switch was set to
+        isTouchscreenMode = preferences.getBoolean(touchscreenModePreference(), isLinuxMode());
+        touchpadView.setTouchscreenMode(isTouchscreenMode);
+        Switch swTouchscreenMode = findViewById(R.id.SWTouchscreenMode);
+        if (swTouchscreenMode != null) swTouchscreenMode.setChecked(isTouchscreenMode);
         touchpadView.setFourFingersTapCallback(() -> {
             if (!drawerLayout.isDrawerOpen(GravityCompat.START))
                 drawerLayout.openDrawer(GravityCompat.START);
@@ -1515,6 +1523,17 @@ public class XServerDisplayActivity extends AppCompatActivity {
             btSubVibration.setOnClickListener(v -> {
                 showVibrationDialog();
                 drawerLayout.closeDrawers();
+            });
+        }
+
+        // Checked once the session's mode is known (setupUI)
+        Switch swTouchscreenMode = findViewById(R.id.SWTouchscreenMode);
+        if (swTouchscreenMode != null) {
+            swTouchscreenMode.setOnCheckedChangeListener((btn, checked) -> {
+                isTouchscreenMode = checked;
+                if (touchpadView != null)
+                    touchpadView.setTouchscreenMode(isTouchscreenMode);
+                preferences.edit().putBoolean(touchscreenModePreference(), isTouchscreenMode).apply();
             });
         }
 

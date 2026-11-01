@@ -162,7 +162,7 @@ public class TouchpadView extends View {
         }
     }
 
-    /** Touch clicks where the finger is, like the "touchscreen_toggle" preference (used by Linux mode) */
+    /** Touch clicks where the finger is instead of moving the pointer like a touchpad (sidebar switch) */
     public void setTouchscreenMode(boolean touchscreenMode) {
         this.touchscreenMode = touchscreenMode;
     }
@@ -172,7 +172,7 @@ public class TouchpadView extends View {
         // If mouse is disabled, ignore all input
         if (!mouseEnabled) return true;
         
-        boolean isTouchscreenMode = touchscreenMode || preferences.getBoolean("touchscreen_toggle", false);
+        boolean isTouchscreenMode = touchscreenMode;
 
         // Reset the timeout timer to keep controls visible
         resetTouchscreenTimeout();  // <-- Ensure the controls stay visible
