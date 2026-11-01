@@ -21,12 +21,34 @@ squashfs_offset() {
 name=$(basename "$image")
 dir="${XDG_CACHE_HOME:-$HOME/.cache}/appimages/${name%.*}"
 stamp="$image $(stat -c %s-%Y "$image")"
-if [ "$(cat "$dir/.tuxnator-stamp" 2>/dev/null)" != "$stamp" ]; then
-    rm -rf "$dir" "$dir.tmp"
+# Extracted from this very file, and complete (an AppRun or a nix-appimage entrypoint)
+extracted() {
+    [ "$(cat "$1/.tuxnator-stamp" 2>/dev/null)" = "$stamp" ] && { [ -e "$1/AppRun" ] || [ -L "$1/entrypoint" ]; }
+}
+if ! extracted "$dir"; then
     mkdir -p "$(dirname "$dir")"
-    unsquashfs -q -n -no-xattrs -o "$(squashfs_offset "$image")" -d "$dir.tmp" "$image" >/dev/null
-    echo "$stamp" > "$dir.tmp/.tuxnator-stamp"
-    mv "$dir.tmp" "$dir"
+    # The first extraction takes minutes with no window: a second double tap meanwhile used to
+    # delete the half-written copy and leave one without AppRun. Now it just leaves.
+    exec 9>"$dir.lock"
+    flock -n 9 || exit 0
+    if ! extracted "$dir"; then
+        # A small terminal window says what is happening and closes when the extraction is done
+        # (the X server has no core fonts for xmessage)
+        notice="$(dirname "$dir")/.extracting-$$"
+        : > "$notice"
+        trap 'rm -f "$notice"' EXIT
+        lxterminal --title=Tuxnator --geometry=64x4 -e "sh -c 'echo Preparando o AppImage para o primeiro uso.; echo Isso leva alguns minutos, e ele abre sozinho em seguida.; while [ -e $notice ]; do sleep 1; done'" >/dev/null 2>&1 &
+        # Nix store directories come read-only, which rm can't empty
+        chmod -R u+w "$dir" "$dir.tmp" 2>/dev/null || true
+        rm -rf "$dir" "$dir.tmp"
+        unsquashfs -q -n -no-xattrs -o "$(squashfs_offset "$image")" -d "$dir.tmp" "$image" >/dev/null
+        echo "$stamp" > "$dir.tmp/.tuxnator-stamp"
+        extracted "$dir.tmp" || { echo "$name: no AppRun after extracting it" >&2; exit 1; }
+        mv "$dir.tmp" "$dir"
+        rm -f "$notice"
+        trap - EXIT
+    fi
+    exec 9>&-
 fi
 
 target="$dir/AppRun"
