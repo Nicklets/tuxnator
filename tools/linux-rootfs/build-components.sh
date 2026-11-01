@@ -80,6 +80,13 @@ EOF
 sed -i "/^ *$WRITE_OPCODE\$/{n;r $SRC/esr-write.c
 }" "$SIGNALS"
 grep -q 'ff->magic!=ESR_MAGIC' "$SIGNALS" || { echo "ESR patch failed" >&2; exit 1; }
+# Like ld.so, which a static binary never runs, don't load BOX64_LD_PRELOAD libraries into one:
+# Box64 did, and the static nix-appimage wrapper of SacredFire crashed at its first instruction.
+# The variable stays set for the dynamic programs it starts.
+CORE="$SRC/box64/src/core.c"
+grep -qx '    if(ld_preload.size) {' "$CORE" || { echo "preload block not found in $CORE" >&2; exit 1; }
+sed -i 's/^    if(ld_preload.size) {$/    if(ld_preload.size \&\& box64_hasinterp) {/' "$CORE"
+grep -qx '    if(ld_preload.size && box64_hasinterp) {' "$CORE" || { echo "static preload patch failed" >&2; exit 1; }
 # shellcheck disable=SC2086
 cmake -S "$SRC/box64" -B "$SRC/box64/build" $BOX64_CMAKE_FLAGS
 cmake --build "$SRC/box64/build" -j "$JOBS"
