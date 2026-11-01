@@ -1502,7 +1502,23 @@ public class WinlatorHUD extends View {
             touchDownMs = 0;
             rendererActive = true;
             userEnabled = true;
-            prefs.edit().putBoolean(KEY_VIS, true).apply();
+            // Back to where and how the HUD starts: a HUD dragged off screen, shrunk or faded out
+            // is what people reach for this button to recover
+            vertical = false;
+            hudAlpha = 1f;
+            setScaleX(1f);
+            setScaleY(1f);
+            setX(16f);
+            setY(16f);
+            prefs.edit()
+                    .putBoolean(KEY_VIS, true)
+                    .putBoolean(KEY_VERT, false)
+                    .putFloat(KEY_SCALE, 1f)
+                    .putInt(KEY_ALPHA, 100)
+                    .putFloat(KEY_X, 16f)
+                    .putFloat(KEY_Y, 16f)
+                    .apply();
+            requestRelayout();
             if (!mesaRendererActive) refreshBackendRenderer(true);
             startStatsThread();
             setVisibility(VISIBLE);

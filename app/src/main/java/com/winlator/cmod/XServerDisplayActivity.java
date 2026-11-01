@@ -1804,6 +1804,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
         });
         if (btResetHud != null) btResetHud.setOnClickListener(v -> {
             if (modernHud != null) modernHud.forceReset();
+            // The sliders show the defaults the HUD went back to (scale 1 = 50, opacity 100)
+            if (sbScale != null) sbScale.setValue(50f);
+            if (sbAlpha != null) sbAlpha.setValue(100f);
         });
 
         if (swHudMaster != null) {
