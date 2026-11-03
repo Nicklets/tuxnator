@@ -67,6 +67,7 @@ Já testados: SuperTuxKart (jogável com toque, controle virtual e som), apps GT
   Freedreno, e Zink (OpenGL sobre Vulkan)
 - [PRoot](https://proot-me.github.io)
 - [Debian](https://www.debian.org)
+- Ícone: um pinguim no estilo do Tux, o mascote do Linux criado por Larry Ewing (lewing@isc.tamu.edu) com o GIMP
 - Wine, DXVK, VKD3D, D8VK, CNC DDraw, dxwrapper e libadrenotools, usados no modo Windows
 
 Licença MIT (veja [LICENSE](LICENSE)). Os componentes de terceiros seguem as próprias licenças.
