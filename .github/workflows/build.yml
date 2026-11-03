@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Create a draft pre-release with this tag (e.g. v0.1-beta). Empty = artifact only."
+        description: "Create a draft pre-release with this tag (e.g. v0.1-beta), or replace the APK of an existing one. Empty = artifact only."
         required: false
         default: ""
 
@@ -90,6 +90,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag }}
         run: |
-          # Notes are written in the release page before it is published
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Tuxnator $TAG" --notes "" --draft --prerelease
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # An existing release keeps its notes and status; only the APK and its hash are replaced
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            # Notes are written in the release page before it is published
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "Tuxnator $TAG" --notes "" --draft --prerelease
+          fi

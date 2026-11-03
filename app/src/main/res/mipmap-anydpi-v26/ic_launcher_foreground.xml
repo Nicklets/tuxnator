@@ -4,5 +4,5 @@
         android:width="108dp"
         android:height="108dp"
         android:gravity="center"
-        android:drawable="@drawable/tuxnator_launcher_foreground" />
+        android:drawable="@mipmap/tuxnator_launcher_kart" />
 </layer-list>
