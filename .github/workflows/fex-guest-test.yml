@@ -42,7 +42,6 @@ jobs:
         working-directory: /src
         shell: bash
         run: |
-          mkdir -p /tmp/pgoarm pgo; tar xf pgo-arm.tar -C /tmp/pgoarm; cp -r /tmp/pgoarm/src/pgo/. pgo/; ls pgo | wc -l
           report() {
             code=$?
             for f in /tmp/port.log out/gpu-build.log out/fex-build.log; do [ -s "$f" ] && tail -n 40 "$f" > /tmp/tail.log; done
