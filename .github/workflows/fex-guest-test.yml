@@ -70,3 +70,57 @@ jobs:
             /src/out/guest-cpu-test
             /src/out/libbbcpu.so
           if-no-files-found: warn
+
+  # The whole port for aarch64: the renderer, the runtime and FEX, with every library they load,
+  # to run bb-probe --vulkan-only inside the rootfs.
+  probe:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    container:
+      image: debian:forky
+    steps:
+      - name: Install tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git clang lld llvm gcc g++ \
+            cmake ninja-build pkg-config python3 file glslang-tools glslang-dev spirv-headers spirv-cross \
+            libvulkan-dev libsdl3-dev libfmt-dev libboost-dev libmagicenum-dev robin-map-dev \
+            libvulkan-memory-allocator-dev libxxhash-dev libx11-dev libxcb1-dev x11proto-dev \
+            libwayland-dev libminiz-dev libzydis-dev libxbyak-dev libavformat-dev libavcodec-dev \
+            libavutil-dev libswscale-dev libswresample-dev
+
+      - name: Fetch the source
+        run: |
+          git clone "$ARM_REPO" /src
+          git -C /src checkout "$ARM_REF"
+          git -C /src submodule update --init --recursive
+
+      - name: Build the port
+        working-directory: /src
+        shell: bash
+        run: |
+          report() {
+            code=$?
+            [ "$code" = 0 ] || echo "::error::exit $code: $(tail -n 30 /tmp/port.log | tr -d '%' | tr -s '[:space:]' ' ' | tail -c 3500)"
+          }
+          trap report EXIT
+          BB_LTO=OFF bash build.sh > /tmp/port.log 2>&1
+
+      - name: Bundle
+        working-directory: /src
+        shell: bash
+        run: |
+          mkdir -p /bundle
+          export LD_LIBRARY_PATH=$PWD/out/gpu:$PWD/out/fex
+          cp out/bb-probe out/gpu/libbbgpu.so out/fex/libbbcpu.so /bundle/
+          ldd out/bb-probe | awk '/=> \//{print $3}' | sort -u | xargs -r cp -Ln -t /bundle/
+          cp -L /lib/ld-linux-aarch64.so.1 /bundle/
+          du -sh /bundle; ls /bundle | wc -l
+
+      - name: Upload
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: bb-probe-bundle
+          path: /bundle/
+          if-no-files-found: warn
