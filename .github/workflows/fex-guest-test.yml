@@ -14,6 +14,8 @@ permissions:
 env:
   ARM_REPO: https://github.com/Nicklets/OCTR-NitroFueled-arm.git
   ARM_REF: arm64-fex
+  # generate: an instrumented build for collecting the PGO profile (pgo-arm/ in the fork).
+  BB_PGO: generate
 
 jobs:
   # The game's port for aarch64: FEX runs its x86-64 code, the runtime and the renderer are native.
