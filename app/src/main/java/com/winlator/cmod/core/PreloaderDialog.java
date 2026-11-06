@@ -399,7 +399,11 @@ public class PreloaderDialog {
     }
 
     public void showOnUiThread(final int textResId) {
-        activity.runOnUiThread(() -> show(textResId));
+        activity.runOnUiThread(() -> {
+            // A dialog can't be added to a window that is going away
+            if (activity.isFinishing() || activity.isDestroyed()) return;
+            show(textResId);
+        });
     }
 
     public synchronized void close() {

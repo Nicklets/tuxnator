@@ -209,6 +209,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private boolean isPaused = false;
     private boolean isRelativeMouseMovement = false;
     private boolean isMouseDisabled = false;
+    private boolean exiting = false;
     private boolean isTouchscreenMode = false;
     private boolean simulateTouchScreen = false;
 
@@ -859,6 +860,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private void exit() {
+        // The sidebar's Exit stops the guest, whose termination callback then calls exit() again on
+        // a finishing activity: showing the shutdown dialog there crashed the app (BadTokenException)
+        if (exiting) return;
+        exiting = true;
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
         boolean removeLoadingBar = PreferenceManager.getDefaultSharedPreferences(this)
                 .getBoolean("remove_loading_bar_when_booting_games", false);
