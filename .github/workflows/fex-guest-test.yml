@@ -12,70 +12,12 @@ permissions:
   contents: read
 
 env:
-  ARM_REPO: https://github.com/MaSieS4Fun/ARM_bloodborne_pc.git
-  ARM_REF: 2b705bb6260b5229aff8f7dcd933b72c2c82acb2
-  CTR_REPO: https://github.com/Ryu7w7/OCTR-NitroFueled-PC.git
-  CTR_REF: 3885d1aea24d19ed9b31f96fba57a5cce92183cd
+  ARM_REPO: https://github.com/Nicklets/OCTR-NitroFueled-arm.git
+  ARM_REF: arm64-fex
 
 jobs:
-  build:
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 120
-    # Same image as linux-rootfs.yml, so the binaries link against the rootfs's glibc.
-    container:
-      image: debian:forky
-    steps:
-      - name: Install tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends ca-certificates git clang lld llvm gcc g++             cmake ninja-build pkg-config python3 file
-
-      - name: Fetch the source
-        run: |
-          git clone "$ARM_REPO" /src
-          git -C /src checkout "$ARM_REF"
-          git -C /src submodule update --init --recursive third_party/FEX
-
-      - name: Build libbbcpu
-        working-directory: /src
-        shell: bash
-        # The same options as build.sh in that repository. Logs need a sign-in, annotations do not.
-        run: |
-          report() {
-            code=$?
-            [ "$code" = 0 ] || echo "::error::exit $code: $(tail -n 25 /tmp/fex.log | tr -d '%' | tr -s '[:space:]' ' ')"
-          }
-          trap report EXIT
-          set -x
-          type cmake ninja clang clang++ python3 > /tmp/fex.log 2>&1
-          CC=clang CXX=clang++ cmake -S third_party/FEX -B out/fex -G Ninja             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake"             -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF             -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic             >> /tmp/fex.log 2>&1
-          ninja -C out/fex bbcpu >> /tmp/fex.log 2>&1
-
-      - name: Build the test
-        working-directory: /src
-        run: |
-          gcc -std=c11 -O2 -g -Wall -Wextra -pthread -Isrc tests/test_guest_cpu.c             -Lout/fex -lbbcpu -Wl,-rpath,'$ORIGIN' -o out/guest-cpu-test
-
-      - name: Run on the runner
-        working-directory: /src/out
-        run: |
-          cp fex/libbbcpu.so .
-          file guest-cpu-test libbbcpu.so
-          ./guest-cpu-test
-
-      - name: Upload
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: fex-guest-test
-          path: |
-            /src/out/guest-cpu-test
-            /src/out/libbbcpu.so
-          if-no-files-found: warn
-
-  # The whole port for aarch64: the renderer, the runtime and FEX, with every library they load,
-  # to run bb-probe --vulkan-only inside the rootfs.
-  probe:
+  # The game's port for aarch64: FEX runs its x86-64 code, the runtime and the renderer are native.
+  port:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
     container:
@@ -88,21 +30,12 @@ jobs:
             cmake ninja-build pkg-config python3 file glslang-tools glslang-dev spirv-headers spirv-cross \
             libvulkan-dev libsdl3-dev libfmt-dev libboost-dev libmagicenum-dev robin-map-dev \
             libvulkan-memory-allocator-dev libxxhash-dev libx11-dev libxcb1-dev x11proto-dev \
-            libwayland-dev libzydis-dev libavformat-dev libavcodec-dev \
-            libavutil-dev libswscale-dev libswresample-dev
-
-      - name: Build what Debian does not package
-        run: |
-          git clone --depth 1 https://github.com/richgel999/miniz.git /miniz
-          cmake -S /miniz -B /miniz/out -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-          ninja -C /miniz/out install
-          git clone --depth 1 https://github.com/herumi/xbyak.git /xbyak
-          cp -r /xbyak/xbyak /usr/local/include/
+            libwayland-dev libzydis-dev libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev liblzma-dev
 
       - name: Fetch the source
         run: |
-          git clone "$ARM_REPO" /src
-          git -C /src checkout "$ARM_REF"
+          git clone --branch "$ARM_REF" "$ARM_REPO" /src
           git -C /src submodule update --init --recursive
 
       - name: Build the port
@@ -111,95 +44,41 @@ jobs:
         run: |
           report() {
             code=$?
-            [ "$code" = 0 ] || echo "::error::exit $code: $(tail -n 30 /tmp/port.log | tr -d '%' | tr -s '[:space:]' ' ' | tail -c 3500)"
+            for f in /tmp/port.log out/gpu-build.log out/fex-build.log; do [ -s "$f" ] && tail -n 40 "$f" > /tmp/tail.log; done
+            [ "$code" = 0 ] || echo "::error::exit $code: $(grep -E 'error|Error|FAILED|undefined' /tmp/port.log /tmp/tail.log | tail -n 30 | tr -d '%' | tr -s '[:space:]' ' ' | tail -c 3800)"
           }
           trap report EXIT
           # build.sh keeps this configuration. FEX does not build with Debian's fmt, so it uses its own.
-          CC=clang CXX=clang++ cmake -S third_party/FEX -B out/fex -G Ninja             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake"             -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON             -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF             -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic             > /tmp/port.log 2>&1
+          CC=clang CXX=clang++ cmake -S third_party/FEX -B out/fex -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake" \
+            -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON \
+            -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF \
+            -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic \
+            > /tmp/port.log 2>&1
           BB_LTO=OFF bash build.sh >> /tmp/port.log 2>&1
 
       - name: Bundle
         working-directory: /src
         shell: bash
         run: |
-          mkdir -p /bundle
-          export LD_LIBRARY_PATH=$PWD/out/gpu:$PWD/out/fex
-          cp out/bb-probe out/gpu/libbbgpu.so out/fex/libbbcpu.so /bundle/
-          ldd out/bb-probe | awk '/=> \//{print $3}' | sort -u | xargs -r cp -Ln -t /bundle/
-          cp -L /lib/ld-linux-aarch64.so.1 /bundle/
-          du -sh /bundle; ls /bundle | wc -l
-
-      - name: Upload
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: bb-probe-bundle
-          path: /bundle/
-          if-no-files-found: warn
-
-  # The open source of the game's port, for x86-64 as it is shipped, to compare through Box64 with
-  # the SacredFire build measured so far. No game files.
-  ctr:
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    container:
-      image: debian:forky
-    steps:
-      - name: Install tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends ca-certificates git gcc g++ cmake ninja-build \
-            pkg-config python3 file glslang-tools glslang-dev spirv-headers spirv-cross \
-            libvulkan-dev libsdl3-dev libfmt-dev libboost-dev libmagicenum-dev robin-map-dev \
-            libvulkan-memory-allocator-dev libxxhash-dev libx11-dev libxcb1-dev x11proto-dev \
-            libwayland-dev libzydis-dev nasm make \
-            liblzma-dev libcurl4-openssl-dev libssl-dev libopus-dev zlib1g-dev libzstd-dev
-
-      - name: Build a small FFmpeg
-        # Debian's pulls in dozens of codec libraries that do not load under Box64.
-        run: |
-          git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg.git /ffmpeg
-          cd /ffmpeg
-          ./configure --prefix=/usr/local --enable-shared --disable-static --disable-programs --disable-doc             --disable-autodetect --disable-everything --enable-decoder=h264,hevc,aac,mp3,vp9,atrac9             --enable-demuxer=mov,mpegts,matroska,mp3,aac --enable-parser=h264,hevc,aac,vp9             --enable-protocol=file --enable-swscale --enable-swresample --enable-bsf=h264_mp4toannexb,aac_adtstoasc
-          make -j"$(nproc)" install
-          ldconfig
-
-      - name: Fetch the source
-        run: |
-          git clone "$CTR_REPO" /src
-          git -C /src checkout "$CTR_REF"
-          git -C /src submodule update --init --recursive
-
-      - name: Build
-        working-directory: /src
-        shell: bash
-        run: |
-          report() {
-            code=$?
-            [ "$code" = 0 ] || echo "::error::exit $code: $(tail -n 30 /tmp/ctr.log | tr -d '%' | tr -s '[:space:]' ' ' | tail -c 3500)"
-          }
-          trap report EXIT
-          bash build.sh > /tmp/ctr.log 2>&1
-
-      - name: Bundle
-        working-directory: /src
-        shell: bash
-        run: |
           d=/bundle/ctr
-          mkdir -p "$d/bin/gpu" "$d/lib" "$d/tools"
-          cp -r run.sh scripts patches launcher "$d/"
-          cp tools/gen_import_names.py "$d/tools/"
+          mkdir -p "$d/bin/gpu" "$d/bin/cpu" "$d/lib" "$d/tools/shaders" "$d/third_party"
+          cp -r run.sh run.py scripts patches launcher "$d/"
+          [ -d shaders ] && cp -r shaders "$d/"
+          cp tools/gen_import_names.py "$d/tools/"; cp tools/shaders/build_spirv.py "$d/tools/shaders/"
+          cp -r third_party/gcn2hlsl "$d/third_party/"
           cp out/VERSION "$d/"
           cp out/sacredfire out/bb-gpu-capabilities "$d/bin/"
-          cp out/gpu/libbbgpu.so "$d/bin/gpu/"
-          export LD_LIBRARY_PATH=$PWD/out/gpu
-          { ldd out/sacredfire; ldd out/gpu/libbbgpu.so; } | awk '/=> \//{print $3}' | sort -u | xargs -r cp -Ln -t "$d/lib/"
+          cp out/gpu/libbbgpu.so "$d/bin/gpu/"; cp out/fex/libbbcpu.so "$d/bin/cpu/"
+          export LD_LIBRARY_PATH=$PWD/out/gpu:$PWD/out/fex
+          ldd out/sacredfire | awk '/=> \//{print $3}' | sort -u | xargs -r cp -Ln -t "$d/lib/"
+          cp -L /lib/ld-linux-aarch64.so.1 "$d/lib/"
           du -sh /bundle; ls "$d/lib" | wc -l
 
       - name: Upload
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ctr-x86-64-bundle
+          name: ctr-arm64-bundle
           path: /bundle/
           if-no-files-found: warn
