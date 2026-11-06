@@ -1,0 +1,64 @@
+name: FEX guest CPU test
+
+# Builds FEXCore's guest CPU bridge (libbbcpu.so) and its test from ARM_bloodborne_pc, to find out
+# whether FEX runs on Android's 39-bit address space inside this app's Debian rootfs.
+
+on:
+  push:
+    branches: [fex-guest-test]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ARM_REPO: https://github.com/MaSieS4Fun/ARM_bloodborne_pc.git
+  ARM_REF: 2b705bb6260b5229aff8f7dcd933b72c2c82acb2
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    # Same image as linux-rootfs.yml, so the binaries link against the rootfs's glibc.
+    container:
+      image: debian:forky
+    steps:
+      - name: Install tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git clang lld gcc g++             cmake ninja-build pkg-config python3 file
+
+      - name: Fetch the source
+        run: |
+          git clone "$ARM_REPO" /src
+          git -C /src checkout "$ARM_REF"
+          git -C /src submodule update --init --recursive third_party/FEX
+
+      - name: Build libbbcpu
+        working-directory: /src
+        # The same options as build.sh in that repository.
+        run: |
+          CC=clang CXX=clang++ cmake -S third_party/FEX -B out/fex -G Ninja             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake"             -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF             -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic
+          ninja -C out/fex bbcpu
+
+      - name: Build the test
+        working-directory: /src
+        run: |
+          gcc -std=c11 -O2 -g -Wall -Wextra -pthread -Isrc tests/test_guest_cpu.c             -Lout/fex -lbbcpu -Wl,-rpath,'$ORIGIN' -o out/guest-cpu-test
+
+      - name: Run on the runner
+        working-directory: /src/out
+        run: |
+          cp fex/libbbcpu.so .
+          file guest-cpu-test libbbcpu.so
+          ./guest-cpu-test
+
+      - name: Upload
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: fex-guest-test
+          path: |
+            /src/out/guest-cpu-test
+            /src/out/libbbcpu.so
+          if-no-files-found: warn
