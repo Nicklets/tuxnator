@@ -19,7 +19,7 @@ jobs:
   # The game's port for aarch64: FEX runs its x86-64 code, the runtime and the renderer are native.
   port:
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 180
+    timeout-minutes: 300
     container:
       image: debian:forky
     steps:
@@ -53,9 +53,9 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake" \
             -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON \
             -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF \
-            -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic \
+            -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a+lse+rcpc+dotprod+crypto -DTUNE_CPU=generic \
             > /tmp/port.log 2>&1
-          BB_LTO=OFF bash build.sh >> /tmp/port.log 2>&1
+          bash build.sh >> /tmp/port.log 2>&1
 
       - name: Bundle
         working-directory: /src
