@@ -36,10 +36,19 @@ jobs:
 
       - name: Build libbbcpu
         working-directory: /src
-        # The same options as build.sh in that repository.
+        shell: bash
+        # The same options as build.sh in that repository. Logs need a sign-in, annotations do not.
         run: |
-          CC=clang CXX=clang++ cmake -S third_party/FEX -B out/fex -G Ninja             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake"             -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF             -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic
-          ninja -C out/fex bbcpu
+          report() {
+            code=$?
+            [ "$code" = 0 ] || echo "::error::exit $code: $(tail -n 25 /tmp/fex.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/
+/%0A/g')"
+          }
+          trap report EXIT
+          set -x
+          type cmake ninja clang clang++ python3 > /tmp/fex.log 2>&1
+          CC=clang CXX=clang++ cmake -S third_party/FEX -B out/fex -G Ninja             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake"             -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF             -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic             >> /tmp/fex.log 2>&1
+          ninja -C out/fex bbcpu >> /tmp/fex.log 2>&1
 
       - name: Build the test
         working-directory: /src
