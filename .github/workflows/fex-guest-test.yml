@@ -112,7 +112,9 @@ jobs:
             [ "$code" = 0 ] || echo "::error::exit $code: $(tail -n 30 /tmp/port.log | tr -d '%' | tr -s '[:space:]' ' ' | tail -c 3500)"
           }
           trap report EXIT
-          BB_LTO=OFF bash build.sh > /tmp/port.log 2>&1
+          # build.sh keeps this configuration. FEX does not build with Debian's fmt, so it uses its own.
+          CC=clang CXX=clang++ cmake -S third_party/FEX -B out/fex -G Ninja             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake"             -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON             -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF             -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic             > /tmp/port.log 2>&1
+          BB_LTO=OFF bash build.sh >> /tmp/port.log 2>&1
 
       - name: Bundle
         working-directory: /src
