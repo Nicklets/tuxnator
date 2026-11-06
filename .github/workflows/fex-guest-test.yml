@@ -86,8 +86,16 @@ jobs:
             cmake ninja-build pkg-config python3 file glslang-tools glslang-dev spirv-headers spirv-cross \
             libvulkan-dev libsdl3-dev libfmt-dev libboost-dev libmagicenum-dev robin-map-dev \
             libvulkan-memory-allocator-dev libxxhash-dev libx11-dev libxcb1-dev x11proto-dev \
-            libwayland-dev libminiz-dev libzydis-dev libxbyak-dev libavformat-dev libavcodec-dev \
+            libwayland-dev libzydis-dev libavformat-dev libavcodec-dev \
             libavutil-dev libswscale-dev libswresample-dev
+
+      - name: Build what Debian does not package
+        run: |
+          git clone --depth 1 --branch 3.0.2 https://github.com/richgel999/miniz.git /miniz
+          cmake -S /miniz -B /miniz/out -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF
+          ninja -C /miniz/out install
+          git clone --depth 1 https://github.com/herumi/xbyak.git /xbyak
+          cp -r /xbyak/xbyak /usr/local/include/
 
       - name: Fetch the source
         run: |
