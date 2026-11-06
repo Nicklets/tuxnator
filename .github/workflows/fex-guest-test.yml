@@ -152,7 +152,7 @@ jobs:
             pkg-config python3 file glslang-tools glslang-dev spirv-headers spirv-cross \
             libvulkan-dev libsdl3-dev libfmt-dev libboost-dev libmagicenum-dev robin-map-dev \
             libvulkan-memory-allocator-dev libxxhash-dev libx11-dev libxcb1-dev x11proto-dev \
-            libwayland-dev libzydis-dev nasm \
+            libwayland-dev libzydis-dev nasm make \
             liblzma-dev libcurl4-openssl-dev libssl-dev libopus-dev zlib1g-dev libzstd-dev
 
       - name: Build a small FFmpeg
