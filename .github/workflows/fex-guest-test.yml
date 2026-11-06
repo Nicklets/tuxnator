@@ -14,6 +14,8 @@ permissions:
 env:
   ARM_REPO: https://github.com/MaSieS4Fun/ARM_bloodborne_pc.git
   ARM_REF: 2b705bb6260b5229aff8f7dcd933b72c2c82acb2
+  CTR_REPO: https://github.com/GetLostIn/CTR-NitroFueled-PC.git
+  CTR_REF: 0cf8def7f676192de4f37a26e08a92ea0cd4674a
 
 jobs:
   build:
@@ -132,5 +134,71 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: bb-probe-bundle
+          path: /bundle/
+          if-no-files-found: warn
+
+  # The open source of the game's port, for x86-64 as it is shipped, to compare through Box64 with
+  # the SacredFire build measured so far. No game files.
+  ctr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    container:
+      image: debian:forky
+    steps:
+      - name: Install tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git gcc g++ cmake ninja-build \
+            pkg-config python3 file glslang-tools glslang-dev spirv-headers spirv-cross \
+            libvulkan-dev libsdl3-dev libfmt-dev libboost-dev libmagicenum-dev robin-map-dev \
+            libvulkan-memory-allocator-dev libxxhash-dev libx11-dev libxcb1-dev x11proto-dev \
+            libwayland-dev libzydis-dev libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+
+      - name: Build what Debian does not package
+        run: |
+          git clone --depth 1 https://github.com/richgel999/miniz.git /miniz
+          cmake -S /miniz -B /miniz/out -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          ninja -C /miniz/out install
+          git clone --depth 1 https://github.com/herumi/xbyak.git /xbyak
+          cp -r /xbyak/xbyak /usr/local/include/
+
+      - name: Fetch the source
+        run: |
+          git clone "$CTR_REPO" /src
+          git -C /src checkout "$CTR_REF"
+          git -C /src submodule update --init --recursive
+
+      - name: Build
+        working-directory: /src
+        shell: bash
+        run: |
+          report() {
+            code=$?
+            [ "$code" = 0 ] || echo "::error::exit $code: $(tail -n 30 /tmp/ctr.log | tr -d '%' | tr -s '[:space:]' ' ' | tail -c 3500)"
+          }
+          trap report EXIT
+          bash build.sh > /tmp/ctr.log 2>&1
+
+      - name: Bundle
+        working-directory: /src
+        shell: bash
+        run: |
+          d=/bundle/ctr
+          mkdir -p "$d/bin/gpu" "$d/lib" "$d/tools"
+          cp -r run.sh scripts patches launcher "$d/"
+          cp tools/gen_import_names.py "$d/tools/"
+          cp out/VERSION "$d/"
+          cp out/sacredfire out/bb-gpu-capabilities "$d/bin/"
+          cp out/gpu/libbbgpu.so "$d/bin/gpu/"
+          export LD_LIBRARY_PATH=$PWD/out/gpu
+          { ldd out/sacredfire; ldd out/gpu/libbbgpu.so; } | awk '/=> \//{print $3}' | sort -u | xargs -r cp -Ln -t "$d/lib/"
+          du -sh /bundle; ls "$d/lib" | wc -l
+
+      - name: Upload
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ctr-x86-64-bundle
           path: /bundle/
           if-no-files-found: warn
