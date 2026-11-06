@@ -152,8 +152,17 @@ jobs:
             pkg-config python3 file glslang-tools glslang-dev spirv-headers spirv-cross \
             libvulkan-dev libsdl3-dev libfmt-dev libboost-dev libmagicenum-dev robin-map-dev \
             libvulkan-memory-allocator-dev libxxhash-dev libx11-dev libxcb1-dev x11proto-dev \
-            libwayland-dev libzydis-dev libavformat-dev libavcodec-dev libavutil-dev \
-            libswscale-dev libswresample-dev liblzma-dev libcurl4-openssl-dev libssl-dev libopus-dev zlib1g-dev libzstd-dev
+            libwayland-dev libzydis-dev nasm \
+            liblzma-dev libcurl4-openssl-dev libssl-dev libopus-dev zlib1g-dev libzstd-dev
+
+      - name: Build a small FFmpeg
+        # Debian's pulls in dozens of codec libraries that do not load under Box64.
+        run: |
+          git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg.git /ffmpeg
+          cd /ffmpeg
+          ./configure --prefix=/usr/local --enable-shared --disable-static --disable-programs --disable-doc             --disable-autodetect --disable-everything --enable-decoder=h264,hevc,aac,mp3,vp9,atrac9             --enable-demuxer=mov,mpegts,matroska,mp3,aac --enable-parser=h264,hevc,aac,vp9             --enable-protocol=file --enable-swscale --enable-swresample --enable-bsf=h264_mp4toannexb,aac_adtstoasc
+          make -j"$(nproc)" install
+          ldconfig
 
       - name: Fetch the source
         run: |
