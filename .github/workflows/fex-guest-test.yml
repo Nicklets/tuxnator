@@ -14,8 +14,8 @@ permissions:
 env:
   ARM_REPO: https://github.com/MaSieS4Fun/ARM_bloodborne_pc.git
   ARM_REF: 2b705bb6260b5229aff8f7dcd933b72c2c82acb2
-  CTR_REPO: https://github.com/GetLostIn/CTR-NitroFueled-PC.git
-  CTR_REF: 0cf8def7f676192de4f37a26e08a92ea0cd4674a
+  CTR_REPO: https://github.com/Ryu7w7/OCTR-NitroFueled-PC.git
+  CTR_REF: 3885d1aea24d19ed9b31f96fba57a5cce92183cd
 
 jobs:
   build:
