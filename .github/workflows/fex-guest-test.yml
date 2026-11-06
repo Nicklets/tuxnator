@@ -41,8 +41,7 @@ jobs:
         run: |
           report() {
             code=$?
-            [ "$code" = 0 ] || echo "::error::exit $code: $(tail -n 25 /tmp/fex.log | tr -d '%' | tr '
-' '|')"
+            [ "$code" = 0 ] || echo "::error::exit $code: $(tail -n 25 /tmp/fex.log | tr -d '%' | tr -s '[:space:]' ' ')"
           }
           trap report EXIT
           set -x
