@@ -66,6 +66,10 @@ echo "::endgroup::"
 
 echo "::group::Mesa $MESA_REF"
 git clone --depth 1 --branch "$MESA_REF" "$MESA_REPO" "$SRC/mesa"
+# Upstream fixes newer than $MESA_REF, backported (each patch's header says what and why)
+for p in "$HERE"/patches/mesa-*.patch; do
+    git -C "$SRC/mesa" apply "$p" || { echo "$(basename "$p") does not apply" >&2; exit 1; }
+done
 # Linking libdrm (see config.env) also turns on the KMS display WSI, but Turnip on KGSL fails
 # instance creation when VK_KHR_display is enabled, and apps like vkcube enable it whenever it's
 # listed. There is no KMS on Android, so leave the display WSI out.

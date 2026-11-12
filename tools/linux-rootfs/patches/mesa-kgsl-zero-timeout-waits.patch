@@ -1,0 +1,83 @@
+Turnip on KGSL: polls (0 ms waits) must not block.
+
+KGSL's IOCTL_KGSL_DEVICE_WAITTIMESTAMP_CTXTID takes a 0 ms timeout as a
+forever wait (adreno_drawctxt_wait). Mesa polls timeline points with a 0
+timeout on every timeline signal and allocation, so on Android the
+submitting thread waited for the GPU each frame and the GPU ran out of
+work (a game on an Adreno 730: vkQueueSubmit blocked ~44 ms a frame).
+
+Backport to mesa-26.2.5 of these upstream commits (in mesa-26.3.0, MR 44838):
+  e984ef294eaf tu/kgsl: Prevent indefinite wait times for 0 timeout waits
+  6cb65e613254 tu/kgsl: Always round up the wait timeout
+26.2.5 lacks b7ad24ada3e6 (device-lost error reporting), so the poll keeps
+this version's error handling: a failed read is reported as VK_TIMEOUT.
+
+--- a/src/freedreno/vulkan/tu_knl_kgsl.cc
++++ b/src/freedreno/vulkan/tu_knl_kgsl.cc
+@@ -770,12 +770,27 @@
+        */
+       return -1;
+ 
+-   uint64_t cur_time_ms = os_time_get_nano() / 1000000;
+-   uint64_t abs_timeout_ms = abs_timeout_ns / 1000000;
+-   if (abs_timeout_ms <= cur_time_ms)
++   uint64_t cur_time_ns = os_time_get_nano();
++   if (abs_timeout_ns <= cur_time_ns)
+       return 0;
+ 
+-   return abs_timeout_ms - cur_time_ms;
++   uint64_t relative_ns = abs_timeout_ns - cur_time_ns;
++   uint64_t relative_ms = relative_ns / 1000000 + (relative_ns % 1000000 != 0);
++   return relative_ms > INT32_MAX ? -1 : relative_ms;
++}
++
++static VkResult
++kgsl_poll_timestamp(int fd, unsigned int context_id, unsigned int timestamp)
++{
++   struct kgsl_cmdstream_readtimestamp_ctxtid read = {
++      .context_id = context_id,
++      .type = KGSL_TIMESTAMP_RETIRED,
++   };
++
++   if (safe_ioctl(fd, IOCTL_KGSL_CMDSTREAM_READTIMESTAMP_CTXTID, &read))
++      return VK_TIMEOUT;
++
++   return timestamp_cmp(read.timestamp, timestamp) ? VK_SUCCESS : VK_TIMEOUT;
+ }
+ 
+ /* safe_ioctl is not enough as restarted waits would not adjust the timeout
+@@ -790,25 +805,22 @@
+    struct kgsl_device_waittimestamp_ctxtid wait = {
+       .context_id = context_id,
+       .timestamp = timestamp,
+-      .timeout = get_relative_ms(abs_timeout_ns),
+    };
+ 
+    while (true) {
+-      int ret = ioctl(fd, IOCTL_KGSL_DEVICE_WAITTIMESTAMP_CTXTID, &wait);
+-
+-      if (ret == -1 && (errno == EINTR || errno == EAGAIN)) {
+-         int timeout_ms = get_relative_ms(abs_timeout_ns);
++      /* KGSL takes a 0 ms timeout as a forever wait (adreno_drawctxt_wait) */
++      int timeout_ms = get_relative_ms(abs_timeout_ns);
++      if (timeout_ms == 0)
++         return kgsl_poll_timestamp(fd, context_id, timestamp);
+ 
+-         /* update timeout to consider time that has passed since the start */
+-         if (timeout_ms == 0)
+-            return VK_TIMEOUT;
++      wait.timeout = timeout_ms;
++      int ret = ioctl(fd, IOCTL_KGSL_DEVICE_WAITTIMESTAMP_CTXTID, &wait);
++      if (ret == 0)
++         return VK_SUCCESS;
+ 
+-         wait.timeout = timeout_ms;
+-      } else if (ret == -1) {
++      if (errno != EINTR && errno != EAGAIN) {
+          assert(errno == ETIMEDOUT);
+          return VK_TIMEOUT;
+-      } else {
+-         return VK_SUCCESS;
+       }
+    }
+ }
